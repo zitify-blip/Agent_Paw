@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +23,11 @@ public partial class App : Application
             {
                 config.SetBasePath(AppContext.BaseDirectory);
                 config.AddJsonFile("appsettings.json", optional: true);
+                // 설치본에서 시크릿을 사용자 프로파일에 격리 보관. 설치 디렉토리 값보다 우선한다.
+                var userConfigPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "AgentPaw", "appsettings.json");
+                config.AddJsonFile(userConfigPath, optional: true, reloadOnChange: false);
             })
             .ConfigureServices((context, services) =>
             {
@@ -101,15 +107,45 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // 설치 직후 최초 실행: 사용자 프로파일에 설정 파일이 없고 ConnectionString 도 비어 있으면
+        // Example 을 복사한 뒤 notepad 로 열어 편집을 유도한다. 시크릿을 인스톨러에 포함하지 않기 위함.
+        var configuration = _host.Services.GetRequiredService<IConfiguration>();
+        if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("Default")))
+        {
+            var userDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "AgentPaw");
+            Directory.CreateDirectory(userDir);
+            var userConfigPath = Path.Combine(userDir, "appsettings.json");
+            if (!File.Exists(userConfigPath))
+            {
+                var examplePath = Path.Combine(AppContext.BaseDirectory, "appsettings.Example.json");
+                if (File.Exists(examplePath))
+                    File.Copy(examplePath, userConfigPath);
+                else
+                    File.WriteAllText(userConfigPath,
+                        "{\n  \"ConnectionStrings\": {\n    \"Default\": \"Host=localhost;Port=5432;Database=agent_paw;Username=postgres;Password=\"\n  },\n  \"Google\": {\n    \"ClientId\": \"\",\n    \"ClientSecret\": \"\",\n    \"RedirectUri\": \"http://localhost:47891/auth/callback\"\n  }\n}\n");
+            }
+            System.Windows.MessageBox.Show(
+                $"최초 실행 설정 파일이 생성되었다:\n{userConfigPath}\n\nPostgreSQL 접속 정보와 Google OAuth 클라이언트 정보를 입력한 뒤 앱을 재실행한다.",
+                "Agent Paw — 최초 설정", MessageBoxButton.OK, MessageBoxImage.Information);
+            try { System.Diagnostics.Process.Start("notepad.exe", userConfigPath); } catch { }
+            Shutdown();
+            return;
+        }
 
         // 기존 Electron 앱이 테이블을 관리하므로, 연결만 확인한다.
         await using var db = _host.Services.GetRequiredService<IDbContextFactory<AgentPawDbContext>>()
             .CreateDbContext();
         if (!await db.Database.CanConnectAsync())
         {
+            var userConfigPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "AgentPaw", "appsettings.json");
             System.Windows.MessageBox.Show(
-                "PostgreSQL 데이터베이스에 연결할 수 없습니다.\nappsettings.json의 ConnectionStrings를 확인하세요.",
+                $"PostgreSQL 데이터베이스에 연결할 수 없습니다.\n\n설정 파일 위치:\n{userConfigPath}\n\nConnectionStrings.Default 값을 확인한 뒤 앱을 재실행한다.",
                 "Agent Paw", MessageBoxButton.OK, MessageBoxImage.Error);
+            try { System.Diagnostics.Process.Start("notepad.exe", userConfigPath); } catch { }
             Shutdown();
             return;
         }
