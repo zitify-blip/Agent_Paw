@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Release version: $version"
+
+      - name: Restore dependencies
+        run: dotnet restore AgentPaw/AgentPaw.csproj
+
+      - name: Publish (self-contained win-x64 single-file)
+        run: >
+          dotnet publish AgentPaw/AgentPaw.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:AssemblyVersion=${{ steps.version.outputs.version }}.0
+          -p:FileVersion=${{ steps.version.outputs.version }}.0
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Update installer version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $iss = Get-Content installer/AgentPaw.iss -Raw
+          $iss = $iss -replace 'AppVersion=\d+\.\d+\.\d+', "AppVersion=$version"
+          $iss = $iss -replace 'AppVerName=AgentPaw \d+\.\d+\.\d+', "AppVerName=AgentPaw $version"
+          $iss = $iss -replace 'OutputBaseFilename=AgentPaw_Setup_v\d+\.\d+\.\d+', "OutputBaseFilename=AgentPaw_Setup_v$version"
+          Set-Content installer/AgentPaw.iss -Value $iss
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/AgentPaw.iss
+
+      - name: Generate SHA256 sidecar
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $installer = "installer/installer_output/AgentPaw_Setup_v$version.exe"
+          $hash = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+          $sidecar = "$installer.sha256"
+          "$hash  AgentPaw_Setup_v$version.exe" | Out-File -FilePath $sidecar -Encoding ascii -NoNewline
+          Write-Host "SHA256: $hash"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AgentPaw v${{ steps.version.outputs.version }}
+          body: |
+            AgentPaw v${{ steps.version.outputs.version }} 릴리스.
+
+            ## 설치 방법
+            `AgentPaw_Setup_v${{ steps.version.outputs.version }}.exe` 를 다운로드 후 실행한다.
+
+            ## 무결성 검증
+            `.sha256` 파일로 다운로드 파일의 SHA256 해시를 검증할 수 있다.
+            앱 내 자동 업데이트 기능이 검증을 자동 수행한다.
+          files: |
+            installer/installer_output/AgentPaw_Setup_v${{ steps.version.outputs.version }}.exe
+            installer/installer_output/AgentPaw_Setup_v${{ steps.version.outputs.version }}.exe.sha256
+          draft: false
+          prerelease: false
