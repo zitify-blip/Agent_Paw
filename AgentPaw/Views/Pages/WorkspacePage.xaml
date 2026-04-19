@@ -1,0 +1,555 @@
+<UserControl x:Class="AgentPaw.Views.Pages.WorkspacePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:AgentPaw.ViewModels"
+             xmlns:controls="clr-namespace:AgentPaw.Views.Controls">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Top Bar -->
+        <Border Grid.Row="0" Padding="16,10"
+                BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource PawBorder}"
+                Background="{DynamicResource PawCardBg}">
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Left"
+                           Icon="{ui:SymbolIcon ArrowLeft24}"
+                           Appearance="Transparent"
+                           Click="BackButton_Click"
+                           ToolTip="프로젝트 목록으로"
+                           Margin="0,0,12,0" />
+
+                <TextBlock Text="{Binding ProjectName}"
+                           FontSize="16" FontWeight="SemiBold"
+                           FontFamily="{StaticResource PawFont}"
+                           Foreground="{DynamicResource PawTextPrimary}"
+                           VerticalAlignment="Center" />
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <CheckBox Content="사용자에게 묻기"
+                              IsChecked="{Binding AskUserEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              VerticalAlignment="Center"
+                              Margin="0,0,12,0"
+                              FontFamily="{StaticResource PawFont}"
+                              Foreground="{DynamicResource PawTextSecondary}"
+                              ToolTip="체크를 해제하면 PM이 절대 User에게 되묻지 않고 스스로 판단하여 진행합니다." />
+                    <ui:Button Icon="{ui:SymbolIcon Copy24}"
+                               Appearance="Transparent"
+                               Command="{Binding CopyConversationCommand}"
+                               Margin="0,0,4,0"
+                               ToolTip="대화 전체 markdown으로 클립보드 복사" />
+                    <ui:Button Icon="{ui:SymbolIcon FolderOpen24}"
+                               Appearance="Transparent"
+                               Command="{Binding OpenWorkspaceFolderCommand}"
+                               ToolTip="{Binding WorkspacePath, StringFormat='작업 폴더 열기 — {0}'}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Tab bar -->
+        <Border Grid.Row="1" Padding="16,6"
+                BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource PawBorder}">
+            <Border.Background>
+                <SolidColorBrush Color="{StaticResource PawCreamColor}" />
+            </Border.Background>
+            <StackPanel Orientation="Horizontal">
+                <ui:Button x:Name="ChatTabBtn"
+                           Content="채팅"
+                           Icon="{ui:SymbolIcon Chat24}"
+                           Appearance="Primary"
+                           FontFamily="{StaticResource PawFont}"
+                           Padding="10,4" FontSize="12"
+                           Margin="0,0,4,0"
+                           ToolTip="페르소나와 대화"
+                           Click="ChatTab_Click" />
+                <ui:Button x:Name="TimelineTabBtn"
+                           Content="타임라인"
+                           Icon="{ui:SymbolIcon History24}"
+                           Appearance="Secondary"
+                           FontFamily="{StaticResource PawFont}"
+                           Padding="10,4" FontSize="12"
+                           Margin="0,0,4,0"
+                           ToolTip="이벤트 이력과 스냅샷"
+                           Click="TimelineTab_Click" />
+                <ui:Button x:Name="WikiTabBtn"
+                           Content="위키"
+                           Icon="{ui:SymbolIcon Document24}"
+                           Appearance="Secondary"
+                           FontFamily="{StaticResource PawFont}"
+                           Padding="10,4" FontSize="12"
+                           Margin="0,0,4,0"
+                           ToolTip="ADR·SPEC·TROUBLE 지식 문서"
+                           Click="WikiTab_Click" />
+                <ui:Button x:Name="SettingsTabBtn"
+                           Content="설정"
+                           Icon="{ui:SymbolIcon Settings24}"
+                           Appearance="Secondary"
+                           FontFamily="{StaticResource PawFont}"
+                           Padding="10,4" FontSize="12"
+                           ToolTip="프로젝트 설정"
+                           Click="SettingsTab_Click" />
+            </StackPanel>
+        </Border>
+
+        <!-- Tab Content Area -->
+        <Grid Grid.Row="2">
+            <!-- Chat Tab -->
+            <Grid x:Name="ChatPanel" Visibility="Visible">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Chat area paper grain + paw print -->
+                <Border Grid.Row="0" Background="{StaticResource PaperGrainBrush}"
+                        IsHitTestVisible="False" />
+                <Border Grid.Row="0" Background="{StaticResource PawPrintTileBrush}"
+                        IsHitTestVisible="False" />
+
+                <!-- Chat Messages — ListBox를 사용해 UI 가상화 활성화 (100+ 메시지에서도 스크롤 유연) -->
+                <ListBox Grid.Row="0" x:Name="ChatList"
+                         ItemsSource="{Binding Messages}"
+                         Padding="24,16"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.CanContentScroll="True"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Orientation="Vertical" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <!-- 선택·호버 시각 효과 제거 — 메시지는 선택 대상이 아니다 -->
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ChatMessage}">
+                                <Grid Margin="0,4">
+                                    <!-- User message -->
+                                    <Border HorizontalAlignment="Right"
+                                            MaxWidth="600"
+                                            CornerRadius="12,12,2,12"
+                                            Padding="14,10"
+                                            Margin="80,0,0,0"
+                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=user}">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.12" />
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.35" />
+                                        </Border.BorderBrush>
+                                        <Border.BorderThickness>1</Border.BorderThickness>
+                                        <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                    TextForeground="{DynamicResource PawTextPrimary}"
+                                                                    BaseFontSize="15"
+                                                                    FontFamily="{StaticResource PawFont}" />
+                                    </Border>
+
+                                    <!-- Assistant message -->
+                                    <DockPanel HorizontalAlignment="Left"
+                                               MaxWidth="700"
+                                               Margin="0,0,80,0"
+                                               Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=assistant}">
+                                        <!-- Persona avatar -->
+                                        <Grid DockPanel.Dock="Left" Width="100" Height="100"
+                                              Margin="0,0,12,0" VerticalAlignment="Top">
+                                            <!-- Fallback: paw print when avatar missing -->
+                                            <Border CornerRadius="0" Width="100" Height="100"
+                                                    Background="{DynamicResource PawCreamBrush}"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{DynamicResource PawBorder}"
+                                                    Visibility="{Binding PersonaAvatar, Converter={StaticResource EmptyToVisibleConverter}}">
+                                                <TextBlock Text="&#x1F43E;" FontSize="50"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Foreground="{Binding PersonaColor, Converter={StaticResource PersonaColorToBrushConverter}}" />
+                                            </Border>
+                                            <!-- User-provided avatar image -->
+                                            <Border CornerRadius="0" Width="100" Height="100"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{DynamicResource PawBorder}"
+                                                    Visibility="{Binding PersonaAvatar, Converter={StaticResource NotEmptyToVisibleConverter}}">
+                                                <Border.Background>
+                                                    <ImageBrush ImageSource="{Binding PersonaAvatar, Converter={StaticResource AvatarToImageConverter}}"
+                                                                Stretch="UniformToFill" />
+                                                </Border.Background>
+                                            </Border>
+                                        </Grid>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                <TextBlock Text="{Binding PersonaLabel}"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Foreground="{Binding PersonaColor, Converter={StaticResource PersonaColorToBrushConverter}}"
+                                                           VerticalAlignment="Center" />
+                                                <Border CornerRadius="8"
+                                                        Padding="6,1"
+                                                        Margin="8,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource PawCreamBrush}"
+                                                        BorderBrush="{DynamicResource PawBorder}"
+                                                        BorderThickness="1"
+                                                        Visibility="{Binding HasTurnIndex, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                                                    <TextBlock Text="{Binding TurnBadge}"
+                                                               FontSize="10"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Foreground="{DynamicResource PawTextSecondary}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <Border CornerRadius="12,12,12,2"
+                                                    Padding="14,10"
+                                                    Background="{DynamicResource PawCardBg}"
+                                                    BorderBrush="{DynamicResource PawBorder}"
+                                                    BorderThickness="1">
+                                                <StackPanel>
+                                                    <!-- 스트리밍 중 상태 헤더 — 본문 위에 고정 표시 -->
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,0,0,6"
+                                                                Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                                                        <ui:ProgressRing Width="14" Height="14"
+                                                                         IsIndeterminate="True"
+                                                                         Foreground="{DynamicResource PawGold}"
+                                                                         VerticalAlignment="Center"
+                                                                         Margin="0,0,8,0" />
+                                                        <TextBlock Text="응답 생성 중..."
+                                                                   FontSize="11"
+                                                                   FontFamily="{StaticResource PawFont}"
+                                                                   Foreground="{DynamicResource PawTextSecondary}"
+                                                                   FontStyle="Italic"
+                                                                   VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <!-- 스트리밍 중에는 평문 TextBlock으로 렌더 — 매 청크마다 WPF 트리 재구성을 피한다 -->
+                                                    <TextBlock Text="{Binding Content}"
+                                                               TextWrapping="Wrap"
+                                                               FontSize="15"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Foreground="{DynamicResource PawTextPrimary}"
+                                                               Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}" />
+                                                    <!-- 스트리밍 종료 후 마크다운 렌더로 치환 -->
+                                                    <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                                TextForeground="{DynamicResource PawTextPrimary}"
+                                                                                BaseFontSize="15"
+                                                                                FontFamily="{StaticResource PawFont}"
+                                                                                Visibility="{Binding IsStreaming, Converter={StaticResource InverseBoolToVisConverter}, FallbackValue=Visible}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <!-- Handoff step indicator — 다음 에이전트 호출 -->
+                                            <Border CornerRadius="8"
+                                                    Padding="10,6"
+                                                    Margin="0,4,0,0"
+                                                    BorderThickness="1"
+                                                    Visibility="{Binding HasHandoff, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                                                <Border.Background>
+                                                    <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.08" />
+                                                </Border.Background>
+                                                <Border.BorderBrush>
+                                                    <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.35" />
+                                                </Border.BorderBrush>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon Symbol="ArrowForward24" FontSize="14"
+                                                                   Margin="0,0,6,0" VerticalAlignment="Top" />
+                                                    <StackPanel>
+                                                        <TextBlock FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   FontFamily="{StaticResource PawFont}"
+                                                                   Foreground="{DynamicResource PawTextPrimary}">
+                                                            <Run Text="다음 단계 →" />
+                                                            <Run Text="{Binding HandoffToLabel}" FontWeight="Bold" />
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding HandoffRequest}"
+                                                                   FontSize="12"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="500"
+                                                                   FontFamily="{StaticResource PawFont}"
+                                                                   Foreground="{DynamicResource PawTextSecondary}"
+                                                                   Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock Text="{Binding ModelUsed}"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Foreground="{DynamicResource PawTextSecondary}"
+                                                       Opacity="0.5"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </DockPanel>
+
+                                    <!-- System message -->
+                                    <Border HorizontalAlignment="Center"
+                                            CornerRadius="8"
+                                            Padding="16,8"
+                                            BorderThickness="1"
+                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=system}">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.1" />
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.35" />
+                                        </Border.BorderBrush>
+                                        <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                    TextForeground="{DynamicResource PawGold}"
+                                                                    BaseFontSize="14"
+                                                                    FontFamily="{StaticResource PawFont}" />
+                                    </Border>
+
+                                    <!-- PM 종료 보고 -->
+                                    <Border HorizontalAlignment="Center"
+                                            MaxWidth="640"
+                                            CornerRadius="10"
+                                            Padding="16,12"
+                                            BorderThickness="1"
+                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=pm_report}">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.1" />
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.5" />
+                                        </Border.BorderBrush>
+                                        <StackPanel>
+                                            <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                        TextForeground="{DynamicResource PawTextPrimary}"
+                                                                        BaseFontSize="14"
+                                                                        FontFamily="{StaticResource PawFont}" />
+                                            <StackPanel Orientation="Horizontal"
+                                                        Margin="0,8,0,0"
+                                                        Visibility="{Binding HasReportPath, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                                                <ui:Button Content="보고서 다운로드(.md)"
+                                                           Icon="{ui:SymbolIcon ArrowDownload24}"
+                                                           Appearance="Primary"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Padding="10,4"
+                                                           Command="{Binding DataContext.DownloadPmReportCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- PM 개입 요청 -->
+                                    <Border HorizontalAlignment="Center"
+                                            MaxWidth="640"
+                                            CornerRadius="10"
+                                            Padding="16,12"
+                                            BorderThickness="1"
+                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=pm_intervention}">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.15" />
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.55" />
+                                        </Border.BorderBrush>
+                                        <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                    TextForeground="{DynamicResource PawGold}"
+                                                                    BaseFontSize="14"
+                                                                    FontFamily="{StaticResource PawFont}" />
+                                    </Border>
+
+                                    <!-- Error message -->
+                                    <Border HorizontalAlignment="Left"
+                                            MaxWidth="600"
+                                            CornerRadius="8"
+                                            Padding="14,10"
+                                            BorderThickness="1"
+                                            Margin="0,0,80,0"
+                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=error}">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource PawErrorRedColor}" Opacity="0.08" />
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="{StaticResource PawErrorRedColor}" Opacity="0.35" />
+                                        </Border.BorderBrush>
+                                        <TextBlock Text="{Binding Content}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="14"
+                                                   FontFamily="{StaticResource PawFont}"
+                                                   Foreground="{DynamicResource PawErrorRed}" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Loading indicator -->
+                <Border Grid.Row="0"
+                        VerticalAlignment="Bottom"
+                        HorizontalAlignment="Left"
+                        Margin="24,0,0,8"
+                        Padding="14,8"
+                        CornerRadius="8"
+                        Background="{DynamicResource PawCardBg}"
+                        BorderBrush="{DynamicResource PawBorder}"
+                        BorderThickness="1"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:ProgressRing Width="16" Height="16" Margin="0,0,8,0"
+                                         Foreground="{DynamicResource PawGold}" />
+                        <TextBlock Text="AI가 응답을 생성하는 중..."
+                                   FontSize="14" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Input Area -->
+                <Border Grid.Row="1"
+                        Padding="16,12"
+                        BorderThickness="0,1,0,0"
+                        BorderBrush="{DynamicResource PawBorder}"
+                        Background="{DynamicResource PawCardBg}">
+                    <StackPanel>
+                        <!-- Attachment chips — 첨부 파일이 있을 때만 노출 -->
+                        <ItemsControl ItemsSource="{Binding Attachments}"
+                                      Margin="0,0,0,8"
+                                      Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,6,6"
+                                            Padding="8,4"
+                                            CornerRadius="12"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource PawBorder}"
+                                            Background="{DynamicResource PawCreamBrush}">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="Document24" FontSize="14"
+                                                           Foreground="{DynamicResource PawGold}"
+                                                           Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="12"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Foreground="{DynamicResource PawTextPrimary}"
+                                                       VerticalAlignment="Center" />
+                                            <ui:Button Icon="{ui:SymbolIcon Dismiss16}"
+                                                       Appearance="Transparent"
+                                                       Padding="4,0"
+                                                       Margin="6,0,0,0"
+                                                       Tag="{Binding}"
+                                                       ToolTip="첨부 제거"
+                                                       Click="RemoveAttachment_Click" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <DockPanel>
+                            <ui:Button DockPanel.Dock="Left"
+                                       Icon="{ui:SymbolIcon Attach24}"
+                                       Appearance="Transparent"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Bottom"
+                                       ToolTip="파일 첨부 (.md)"
+                                       Click="AttachFile_Click"
+                                       IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBoolConverter}}" />
+                            <ui:Button DockPanel.Dock="Right"
+                                       Icon="{ui:SymbolIcon Send24}"
+                                       Appearance="Primary"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Bottom"
+                                       ToolTip="메시지 전송 (Enter)"
+                                       Click="SendButton_Click"
+                                       IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBoolConverter}}" />
+                            <ui:TextBox x:Name="MessageInput"
+                                        Text="{Binding InputMessage, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="메시지 입력 (Enter 전송, Shift+Enter 줄바꿈, @ 멘션)"
+                                        FontFamily="{StaticResource PawFont}"
+                                        AcceptsReturn="True"
+                                        MaxLength="10000"
+                                        MinHeight="40"
+                                        MaxHeight="120"
+                                        TextWrapping="Wrap"
+                                        TextChanged="MessageInput_TextChanged"
+                                        PreviewKeyDown="MessageInput_PreviewKeyDown"
+                                        KeyDown="MessageInput_KeyDown" />
+                        </DockPanel>
+
+                        <!-- @mention popup -->
+                        <Popup x:Name="MentionPopup"
+                               PlacementTarget="{Binding ElementName=MessageInput}"
+                               Placement="Top"
+                               AllowsTransparency="True"
+                               StaysOpen="False"
+                               IsOpen="{Binding IsMentionPopupOpen, Mode=TwoWay}">
+                            <Border Background="{DynamicResource PawCardBg}"
+                                    BorderBrush="{DynamicResource PawBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="4"
+                                    MinWidth="220"
+                                    MaxHeight="220">
+                                <ListBox x:Name="MentionList"
+                                         ItemsSource="{Binding MentionCandidates}"
+                                         SelectedIndex="{Binding SelectedMentionIndex, Mode=TwoWay}"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         FontFamily="{StaticResource PawFont}"
+                                         PreviewMouseUp="MentionList_MouseUp">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="4,2">
+                                                <TextBlock Text="&#x1F43E;" FontSize="14"
+                                                           Margin="0,0,6,0"
+                                                           Foreground="{Binding Color, Converter={StaticResource PersonaColorToBrushConverter}}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Label, StringFormat='@{0}'}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource PawTextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0" />
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource PawTextSecondary}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Timeline Tab -->
+            <ContentControl x:Name="TimelineHost" Visibility="Collapsed" />
+
+            <!-- Wiki Tab -->
+            <ContentControl x:Name="WikiHost" Visibility="Collapsed" />
+
+            <!-- Project Settings Tab -->
+            <ContentControl x:Name="ProjectSettingsHost" Visibility="Collapsed" />
+        </Grid>
+    </Grid>
+</UserControl>
