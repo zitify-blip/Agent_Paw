@@ -481,7 +481,7 @@
                         <ui:Button DockPanel.Dock="Right" Content="업데이트 확인"
                                    Appearance="Secondary" FontFamily="{StaticResource PawFont}"
                                    HorizontalAlignment="Right" Padding="10,4"
-                                   Command="{Binding CheckForUpdateCommand}"
+                                   Click="CheckForUpdate_Click"
                                    IsEnabled="{Binding IsCheckingUpdate, Converter={StaticResource InverseBoolConverter}}" />
                     </DockPanel>
 
@@ -524,7 +524,7 @@
                                 <ui:Button DockPanel.Dock="Right" Content="지금 설치"
                                            Appearance="Primary" FontFamily="{StaticResource PawFont}"
                                            HorizontalAlignment="Right" Padding="10,4"
-                                           Command="{Binding InstallUpdateCommand}"
+                                           Click="InstallUpdate_Click"
                                            IsEnabled="{Binding IsDownloadingUpdate, Converter={StaticResource InverseBoolConverter}}" />
                             </DockPanel>
                             <TextBlock Text="{Binding UpdateReleaseNotes}" FontSize="11"

@@ -206,6 +206,22 @@ public partial class SettingsPage : UserControl
         else SuccessText.Visibility = Visibility.Collapsed;
     }
 
+    // === Auto Update ===
+
+    private async void CheckForUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.CheckForUpdateCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
+    private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.InstallUpdateCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
     // === Claude CLI ===
 
     private async void ToggleClaudeCli_Click(object sender, RoutedEventArgs e)
