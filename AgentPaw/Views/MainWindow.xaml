@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:pages="clr-namespace:AgentPaw.Views.Pages"
         Title="Agent Paw"
+        Icon="pack://application:,,,/Assets/app.ico"
         Width="1440" Height="900"
         MinWidth="1024" MinHeight="680"
         WindowStartupLocation="CenterScreen"
