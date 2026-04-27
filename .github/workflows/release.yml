@@ -121,13 +121,30 @@ jobs:
 
       - name: Generate app icons
         run: |
-          for entry in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            dir="${entry%%:*}"
-            size="${entry##*:}"
-            mkdir -p "FlutterApp/android/app/src/main/res/$dir"
-            convert -size ${size}x${size} xc:"#6750A4" \
-              "FlutterApp/android/app/src/main/res/$dir/ic_launcher.png"
-          done
+          python3 - <<'PYEOF'
+          import struct, zlib, os
+
+          def make_png(w, h):
+              def chunk(tag, data):
+                  crc = struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+                  return struct.pack('>I', len(data)) + tag + data + crc
+              sig  = b'\x89PNG\r\n\x1a\n'
+              ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+              row  = b'\x00' + bytes([0x67, 0x50, 0xA4] * w)
+              idat = chunk(b'IDAT', zlib.compress(row * h))
+              iend = chunk(b'IEND', b'')
+              return sig + ihdr + idat + iend
+
+          sizes = {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,
+                   'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
+          base = 'FlutterApp/android/app/src/main/res'
+          for d, s in sizes.items():
+              p = os.path.join(base, d)
+              os.makedirs(p, exist_ok=True)
+              with open(os.path.join(p, 'ic_launcher.png'), 'wb') as f:
+                  f.write(make_png(s, s))
+          print('Icons generated.')
+          PYEOF
 
       - name: Flutter pub get
         working-directory: FlutterApp
