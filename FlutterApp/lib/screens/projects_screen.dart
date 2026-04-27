@@ -89,7 +89,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   void _logout() async {
-    await Config.save(serverUrl: '', devToken: '');
+    await Config.clearConnection();
     if (!mounted) return;
     Navigator.pushReplacement(
         context, MaterialPageRoute(builder: (_) => const LoginScreen()));

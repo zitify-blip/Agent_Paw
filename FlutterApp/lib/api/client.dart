@@ -53,6 +53,19 @@ class ApiClient {
     }
   }
 
+  /// 저장하기 전 로그인 화면에서 특정 URL/token으로 헬스 체크
+  static Future<bool> checkHealthWith(String serverUrl, String devToken) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$serverUrl/m/health'),
+        headers: {'Authorization': 'Bearer $devToken'},
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<UserInfo> getMe() async {
     final json = await _get('/m/me');
     return UserInfo.fromJson(json as Map<String, dynamic>);
