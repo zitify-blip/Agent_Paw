@@ -41,7 +41,12 @@ Name: "{autodesktop}\AgentPaw"; Filename: "{app}\AgentPaw.exe"; Tasks: desktopic
 Name: "{userstartup}\AgentPaw"; Filename: "{app}\AgentPaw.exe"; Tasks: startupicon
 
 [Run]
+; 모바일 API 포트 방화벽 허용 (관리자 권한 필요 시 runas 없이 silently 시도)
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""AgentPaw MobileAPI"" dir=in action=allow protocol=TCP localport=47893"; Flags: runhidden; StatusMsg: "방화벽 규칙 등록 중..."
 Filename: "{app}\AgentPaw.exe"; Description: "AgentPaw 실행"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""AgentPaw MobileAPI"""; Flags: runhidden
 
 [UninstallDelete]
 Type: dirifempty; Name: "{userappdata}\AgentPaw"
