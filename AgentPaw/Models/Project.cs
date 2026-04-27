@@ -34,6 +34,9 @@ public class Project
     [Column("ask_user_enabled")]
     public bool AskUserEnabled { get; set; } = true;
 
+    [Column("google_doc_id")]
+    public string? GoogleDocId { get; set; }
+
     [Column("created_at")]
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

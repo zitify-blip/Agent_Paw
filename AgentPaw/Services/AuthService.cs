@@ -47,7 +47,7 @@ public class AuthService
 
     public string GetLoginUrl()
     {
-        var scopes = Uri.EscapeDataString("openid email profile");
+        var scopes = Uri.EscapeDataString("openid email profile https://www.googleapis.com/auth/documents");
         return $"https://accounts.google.com/o/oauth2/v2/auth?client_id={_clientId}&redirect_uri={Uri.EscapeDataString(_redirectUri)}&response_type=code&scope={scopes}&access_type=offline&prompt=consent";
     }
 
@@ -474,6 +474,32 @@ public class AuthService
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public async Task<string?> GetGoogleAccessTokenAsync()
+    {
+        if (CurrentUserId == null) return null;
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var stored = await db.AuthTokens.FirstOrDefaultAsync(
+            t => t.UserId == CurrentUserId && t.TokenType == "GOOGLE_REFRESH" && !t.IsRevoked);
+        if (stored == null) return null;
+
+        var refreshToken = _encryption.Decrypt(stored.TokenValue);
+        var body = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = _clientId,
+            ["client_secret"] = _clientSecret,
+            ["refresh_token"] = refreshToken,
+            ["grant_type"] = "refresh_token"
+        });
+
+        var response = await _httpClient.PostAsync("https://oauth2.googleapis.com/token", body);
+        var json = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode) return null;
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return doc.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() : null;
     }
 
     private async Task<GoogleTokenResponse> ExchangeCodeAsync(string code)

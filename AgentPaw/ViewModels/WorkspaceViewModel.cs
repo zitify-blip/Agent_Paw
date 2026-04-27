@@ -18,6 +18,7 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly ConfigLoaderService _configLoader;
     private readonly IDbContextFactory<AgentPawDbContext> _dbFactory;
     private readonly AuthService _authService;
+    private readonly GoogleDocsService _googleDocs;
 
     [ObservableProperty]
     private string _projectId = string.Empty;
@@ -79,16 +80,31 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedMentionIndex;
 
+    // === Google Docs 내보내기 ===
+    [ObservableProperty]
+    private bool _isGoogleDocsPopupOpen;
+
+    [ObservableProperty]
+    private string _googleDocUrlInput = string.Empty;
+
+    [ObservableProperty]
+    private string? _googleDocsStatusMessage;
+
+    [ObservableProperty]
+    private bool _isGoogleDocsExporting;
+
     public WorkspaceViewModel(
         OrchestratorService orchestrator,
         ConfigLoaderService configLoader,
         IDbContextFactory<AgentPawDbContext> dbFactory,
-        AuthService authService)
+        AuthService authService,
+        GoogleDocsService googleDocs)
     {
         _orchestrator = orchestrator;
         _configLoader = configLoader;
         _dbFactory = dbFactory;
         _authService = authService;
+        _googleDocs = googleDocs;
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
 
@@ -264,6 +280,7 @@ public partial class WorkspaceViewModel : ObservableObject
                 ? project!.GitRepoPath
                 : ProjectSettingsViewModel.DefaultWorkspacePath(projectId);
             AskUserEnabled = project?.AskUserEnabled ?? true;
+            GoogleDocUrlInput = project?.GoogleDocId ?? string.Empty;
         }
 
         // 페르소나 로드 — Avatar가 비어있거나 렌더 불가한 SVG면 강아지 PNG로 폴백
@@ -690,6 +707,113 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             ErrorMessage = $"클립보드 복사 실패: {ex.Message}";
         }
+    }
+
+    [RelayCommand]
+    private void OpenGoogleDocsPopup()
+    {
+        GoogleDocsStatusMessage = null;
+        IsGoogleDocsPopupOpen = true;
+    }
+
+    [RelayCommand]
+    private async Task ExportToGoogleDocsAsync()
+    {
+        var urlOrId = GoogleDocUrlInput?.Trim() ?? string.Empty;
+        var docId = GoogleDocsService.ExtractDocId(urlOrId);
+        if (string.IsNullOrWhiteSpace(docId))
+        {
+            GoogleDocsStatusMessage = "문서 URL 또는 ID를 입력하세요.";
+            return;
+        }
+        if (Messages.Count == 0)
+        {
+            GoogleDocsStatusMessage = "내보낼 대화가 없습니다.";
+            return;
+        }
+
+        IsGoogleDocsExporting = true;
+        GoogleDocsStatusMessage = null;
+
+        try
+        {
+            var accessToken = await _authService.GetGoogleAccessTokenAsync();
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                GoogleDocsStatusMessage = "Google 인증 토큰을 가져올 수 없습니다. 로그아웃 후 다시 로그인하세요.";
+                return;
+            }
+
+            var content = BuildConversationText();
+            var (success, error) = await _googleDocs.ExportAsync(docId, accessToken, content);
+            if (!success)
+            {
+                GoogleDocsStatusMessage = error;
+                return;
+            }
+
+            // 성공 시 doc ID 저장
+            await SaveGoogleDocIdAsync(docId);
+            GoogleDocsStatusMessage = "내보내기 완료!";
+        }
+        catch (Exception ex)
+        {
+            GoogleDocsStatusMessage = $"오류: {ex.Message}";
+        }
+        finally
+        {
+            IsGoogleDocsExporting = false;
+        }
+    }
+
+    private async Task SaveGoogleDocIdAsync(string docId)
+    {
+        try
+        {
+            using var db = _dbFactory.CreateDbContext();
+            var project = await db.Projects.FindAsync(ProjectId);
+            if (project != null)
+            {
+                project.GoogleDocId = docId;
+                project.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+    }
+
+    private string BuildConversationText()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# {ProjectName} — 대화 사본");
+        sb.AppendLine($"내보낸 시각: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine();
+
+        foreach (var m in Messages)
+        {
+            string header = m.Role switch
+            {
+                "user" => "## 사용자",
+                "assistant" => $"## {m.PersonaLabel ?? "AI"}",
+                "system" => "## 시스템",
+                "error" => "## 오류",
+                "pm_report" => "## PM 종료 보고",
+                "pm_intervention" => "## PM 개입 요청",
+                _ => $"## {m.Role}"
+            };
+            sb.AppendLine(header);
+            sb.AppendLine($"{m.Timestamp:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(m.Content))
+            {
+                sb.AppendLine(m.Content);
+                sb.AppendLine();
+            }
+            sb.AppendLine("---");
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
     }
 
     // PM 보고서 REPORT.md를 SaveFileDialog로 다운로드한다.

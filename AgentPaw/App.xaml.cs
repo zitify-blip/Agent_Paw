@@ -65,6 +65,7 @@ public partial class App : Application
                 // Google Chat + WebSocket (Phase 5)
                 services.AddSingleton<ChatBotConfigService>();
                 services.AddSingleton<GoogleChatService>();
+                services.AddSingleton<GoogleDocsService>();
                 services.AddSingleton<ChatCommandService>();
                 services.AddSingleton<ChatDispatcherService>();
                 services.AddSingleton<PubSubPullService>();
@@ -205,6 +206,7 @@ public partial class App : Application
                 CREATE INDEX IF NOT EXISTS idx_persona_instruction_persona ON persona_instruction(persona_id);
                 CREATE INDEX IF NOT EXISTS idx_persona_instruction_file ON persona_instruction(file_id);
                 ALTER TABLE project ADD COLUMN IF NOT EXISTS ask_user_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+                ALTER TABLE project ADD COLUMN IF NOT EXISTS google_doc_id TEXT;
                 CREATE TABLE IF NOT EXISTS app_meta (
                     key TEXT PRIMARY KEY NOT NULL,
                     value TEXT NOT NULL,

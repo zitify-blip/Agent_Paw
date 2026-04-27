@@ -45,6 +45,59 @@
                                Command="{Binding CopyConversationCommand}"
                                Margin="0,0,4,0"
                                ToolTip="대화 전체 markdown으로 클립보드 복사" />
+                    <!-- Google Docs 내보내기 버튼 + 팝업 -->
+                    <Grid>
+                        <ui:Button Icon="{ui:SymbolIcon DocumentArrowUp24}"
+                                   Appearance="Transparent"
+                                   Command="{Binding OpenGoogleDocsPopupCommand}"
+                                   Margin="0,0,4,0"
+                                   ToolTip="Google Docs로 내보내기" />
+                        <Popup x:Name="GoogleDocsPopup"
+                               IsOpen="{Binding IsGoogleDocsPopupOpen, Mode=TwoWay}"
+                               PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Grid}}"
+                               Placement="Bottom"
+                               StaysOpen="False"
+                               AllowsTransparency="True">
+                            <Border Background="{DynamicResource PawCardBg}"
+                                    BorderBrush="{DynamicResource PawBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="16,12"
+                                    Width="360"
+                                    >
+                                <StackPanel>
+                                    <TextBlock Text="Google Docs로 내보내기"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawTextPrimary}"
+                                               Margin="0,0,0,8" />
+                                    <TextBlock Text="문서 URL 또는 ID"
+                                               FontSize="11"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawTextSecondary}"
+                                               Margin="0,0,0,4" />
+                                    <ui:TextBox Text="{Binding GoogleDocUrlInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              FontFamily="{StaticResource PawFont}"
+                                              FontSize="12"
+                                              Margin="0,0,0,8"
+                                              PlaceholderText="https://docs.google.com/document/d/..." />
+                                    <TextBlock Text="{Binding GoogleDocsStatusMessage}"
+                                               FontSize="11"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawGold}"
+                                               Margin="0,0,0,8"
+                                               Visibility="{Binding GoogleDocsStatusMessage, Converter={StaticResource NullToCollapsedConverter}}"
+                                               TextWrapping="Wrap" />
+                                    <ui:Button Content="내보내기"
+                                               Appearance="Primary"
+                                               HorizontalAlignment="Stretch"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Command="{Binding ExportToGoogleDocsCommand}"
+                                               IsEnabled="{Binding IsGoogleDocsExporting, Converter={StaticResource InverseBoolConverter}}" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
                     <ui:Button Icon="{ui:SymbolIcon FolderOpen24}"
                                Appearance="Transparent"
                                Command="{Binding OpenWorkspaceFolderCommand}"
