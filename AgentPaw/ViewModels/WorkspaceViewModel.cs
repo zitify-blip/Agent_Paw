@@ -520,6 +520,8 @@ public partial class WorkspaceViewModel : ObservableObject
             var isTeamMode = teamIds.Count >= 2;
             var mentioned = isTeamMode ? null : ResolveMention(message);
 
+            var priorConversation = BuildPriorConversation();
+
             var input = new OrchestratorInput
             {
                 ProjectId = ProjectId,
@@ -528,7 +530,8 @@ public partial class WorkspaceViewModel : ObservableObject
                 ForcePersonaId = isTeamMode ? null : mentioned?.PersonaId,
                 TeamPersonaIds = isTeamMode ? teamIds : null,
                 TeamMode = isTeamMode ? TeamMode : null,
-                AskUserEnabled = AskUserEnabled
+                AskUserEnabled = AskUserEnabled,
+                PriorConversation = priorConversation.Count > 0 ? priorConversation : null
             };
 
             var progress = new Progress<AgentTurn>(turn =>
@@ -726,6 +729,45 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             ErrorMessage = $"보고서 저장 실패: {ex.Message}";
         }
+    }
+
+    private List<ConversationTurn> BuildPriorConversation()
+    {
+        // 방금 추가된 user 메시지(마지막)는 제외하고 이전 대화만 수집
+        var result = new List<ConversationTurn>();
+        var source = Messages.Take(Messages.Count - 1)
+            .Where(m => m.Role is "user" or "assistant" or "pm_report" or "pm_intervention")
+            .ToList();
+
+        foreach (var msg in source)
+        {
+            var role = msg.Role == "user" ? "user" : "assistant";
+            var body = string.IsNullOrWhiteSpace(msg.Content) ? "(응답 없음)" : msg.Content;
+            // assistant 메시지에는 페르소나 이름을 prefix해서 누가 말한 것인지 구분 가능하게 함
+            var content = (role == "assistant" && !string.IsNullOrWhiteSpace(msg.PersonaLabel))
+                ? $"[{msg.PersonaLabel}]\n{body}"
+                : body;
+
+            // Claude API는 user/assistant 교대를 강제하므로 연속 동일 Role은 하나로 합침
+            if (result.Count > 0 && result[^1].Role == role)
+                result[^1].Content = result[^1].Content + "\n\n" + content;
+            else
+                result.Add(new ConversationTurn { Role = role, Content = content });
+        }
+
+        // Claude API 요구: 반드시 user 턴으로 시작
+        while (result.Count > 0 && result[0].Role != "user")
+            result.RemoveAt(0);
+
+        // 최대 20턴(10회 교환)으로 제한
+        if (result.Count > 20)
+            result = result.Skip(result.Count - 20).ToList();
+
+        // Skip 후 다시 user로 시작하도록 보정
+        while (result.Count > 0 && result[0].Role != "user")
+            result.RemoveAt(0);
+
+        return result;
     }
 
     private int IndexOfStreamKey(string streamKey)

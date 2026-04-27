@@ -169,7 +169,8 @@ public class OrchestratorService
                 {
                     streamBuffer.Append(chunk);
                     EmitPreview(force: false);
-                });
+                },
+                history: iter == 0 ? input.PriorConversation : null);
 
             var toolParse = ToolCallParser.Parse(response.Content);
             var afterTools = toolParse.CleanedContent;
@@ -567,7 +568,8 @@ public class OrchestratorService
                     {
                         streamBuffer.Append(chunk);
                         EmitPreview(force: false);
-                    });
+                    },
+                    history: round == 0 ? input.PriorConversation : null);
 
                 var stance = DiscussionBlockParser.ParseStance(response.Content);
                 var afterStance = stance.CleanedContent;
@@ -847,7 +849,8 @@ public class OrchestratorService
                 config.PrimaryModel, config.FallbackModel,
                 systemPrompt, userPrompt,
                 config.Temperature, config.MaxTokens,
-                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); });
+                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); },
+                history: input.PriorConversation);
 
             var eventId = Guid.NewGuid().ToString();
             var wikiParse = WikiSaveParser.Parse(response.Content);
@@ -929,7 +932,8 @@ public class OrchestratorService
                 config.PrimaryModel, config.FallbackModel,
                 systemPrompt, userPrompt,
                 config.Temperature, config.MaxTokens,
-                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); });
+                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); },
+                history: i == 0 ? input.PriorConversation : null);
 
             var eventId = Guid.NewGuid().ToString();
             var wikiParse = WikiSaveParser.Parse(response.Content);
@@ -1472,6 +1476,11 @@ public class OrchestratorInput
 
     /// <summary>panel | debate | chain — TeamPersonaIds가 있을 때만 사용.</summary>
     public string? TeamMode { get; set; }
+
+    /// <summary>
+    /// 같은 채팅 창의 이전 대화 기록. 에이전트가 세션을 이어서 인식할 수 있도록 첫 번째 AI 호출에 전달된다.
+    /// </summary>
+    public List<ConversationTurn>? PriorConversation { get; set; }
 
     /// <summary>
     /// PM이 User에게 재질의(pm_intervention)를 할 수 있는지 여부.

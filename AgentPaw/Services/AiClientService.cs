@@ -58,6 +58,7 @@ public class AiClientService
         float temperature,
         int maxTokens,
         Action<string>? onDelta,
+        IReadOnlyList<ConversationTurn>? history = null,
         CancellationToken ct = default)
     {
         var models = new List<string> { primaryModel };
@@ -83,7 +84,7 @@ public class AiClientService
 
             try
             {
-                return await ChatWithModelStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, ct).ConfigureAwait(false);
+                return await ChatWithModelStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -116,6 +117,7 @@ public class AiClientService
         float temperature,
         int maxTokens,
         Action<string>? onDelta,
+        IReadOnlyList<ConversationTurn>? history = null,
         CancellationToken ct = default)
     {
         var provider = ApiKeyService.ModelToProvider(model);
@@ -128,7 +130,8 @@ public class AiClientService
             {
                 try
                 {
-                    var content = await _claudeCliService.CallAsync(systemPrompt, userMessage).ConfigureAwait(false);
+                    var cliMsg = FormatHistoryAsText(userMessage, history);
+                    var content = await _claudeCliService.CallAsync(systemPrompt, cliMsg).ConfigureAwait(false);
                     onDelta?.Invoke(content);
                     return new AiResponse
                     {
@@ -141,29 +144,36 @@ public class AiClientService
                 {
                     // CLI 실패 → API Key가 있으면 fallback
                     if (await _apiKeyService.HasApiKeyAsync("CLAUDE").ConfigureAwait(false))
-                        return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, ct).ConfigureAwait(false);
+                        return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
 
                     throw new InvalidOperationException("CLAUDE_CLI_FAILED: Claude Code CLI 호출 실패. API 키도 설정되지 않았습니다.");
                 }
             }
 
-            return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, ct).ConfigureAwait(false);
+            return await CallClaudeStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
         }
 
         if (provider == "GEMINI")
-            return await CallGeminiStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, ct).ConfigureAwait(false);
+            return await CallGeminiStreamAsync(model, systemPrompt, userMessage, temperature, maxTokens, onDelta, history, ct).ConfigureAwait(false);
 
         throw new InvalidOperationException($"Unknown provider: {provider}");
     }
 
     private async Task<AiResponse> CallClaudeStreamAsync(
         string model, string systemPrompt, string userMessage,
-        float temperature, int maxTokens, Action<string>? onDelta, CancellationToken ct)
+        float temperature, int maxTokens, Action<string>? onDelta,
+        IReadOnlyList<ConversationTurn>? history, CancellationToken ct)
     {
         var apiKey = await _apiKeyService.GetApiKeyAsync("CLAUDE").ConfigureAwait(false)
                      ?? throw new InvalidOperationException("Claude API 키가 설정되지 않았습니다.");
 
         var resolvedModel = ClaudeModelMap.GetValueOrDefault(model, model);
+
+        var messages = new List<object>();
+        if (history != null)
+            foreach (var t in history)
+                messages.Add(new { role = t.Role, content = t.Content });
+        messages.Add(new { role = "user", content = userMessage });
 
         var request = new
         {
@@ -172,10 +182,7 @@ public class AiClientService
             temperature,
             system = systemPrompt,
             stream = true,
-            messages = new[]
-            {
-                new { role = "user", content = userMessage }
-            }
+            messages
         };
 
         var json = JsonSerializer.Serialize(request);
@@ -262,7 +269,8 @@ public class AiClientService
 
     private async Task<AiResponse> CallGeminiStreamAsync(
         string model, string systemPrompt, string userMessage,
-        float temperature, int maxTokens, Action<string>? onDelta, CancellationToken ct)
+        float temperature, int maxTokens, Action<string>? onDelta,
+        IReadOnlyList<ConversationTurn>? history, CancellationToken ct)
     {
         var apiKey = await _apiKeyService.GetApiKeyAsync("GEMINI").ConfigureAwait(false)
                      ?? throw new InvalidOperationException("Gemini API 키가 설정되지 않았습니다.");
@@ -270,7 +278,7 @@ public class AiClientService
         var resolvedModel = GeminiModelMap.GetValueOrDefault(model, model);
 
         // Gemini: system prompt를 user message 앞에 병합 (멀티바이트 protobuf 이슈 회피)
-        var combinedMessage = $"{systemPrompt}\n\n---\n\n{userMessage}";
+        var combinedMessage = $"{systemPrompt}\n\n---\n\n{FormatHistoryAsText(userMessage, history)}";
 
         var request = new
         {
@@ -373,6 +381,31 @@ public class AiClientService
             OutputTokens = outputTokens
         };
     }
+
+    // 히스토리가 없으면 원본 메시지, 있으면 이전 대화를 텍스트로 prefix해서 반환
+    private static string FormatHistoryAsText(string userMessage, IReadOnlyList<ConversationTurn>? history)
+    {
+        if (history == null || history.Count == 0) return userMessage;
+        var sb = new StringBuilder();
+        sb.AppendLine("[이전 대화 기록]");
+        foreach (var t in history)
+        {
+            var label = t.Role == "user" ? "User" : "Assistant";
+            sb.AppendLine($"\n[{label}]");
+            sb.AppendLine(t.Content);
+        }
+        sb.AppendLine("\n---\n[현재 요청]");
+        sb.Append(userMessage);
+        return sb.ToString();
+    }
+}
+
+// --- Conversation history DTO ---
+
+public class ConversationTurn
+{
+    public string Role { get; set; } = string.Empty; // "user" | "assistant"
+    public string Content { get; set; } = string.Empty;
 }
 
 // --- Response DTOs ---
