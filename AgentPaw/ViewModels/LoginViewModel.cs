@@ -178,6 +178,40 @@ public partial class LoginViewModel : ObservableObject
         }
     }
 
+#if DEBUG || DEVBYPASS
+    public bool IsDevBypassAvailable => true;
+
+    [RelayCommand]
+    private async Task DevBypassLoginAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = null;
+        try
+        {
+            var (_, user) = await _authService.DevBypassLoginAsync();
+            _mainViewModel.SetAuthenticated(new SessionInfo
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                DisplayName = user.DisplayName,
+                ProfileImageUrl = user.ProfileImageUrl
+            });
+            LoginSucceeded?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            var inner = ex.InnerException?.Message ?? string.Empty;
+            ErrorMessage = $"Dev bypass 실패: {ex.Message}" + (inner.Length > 0 ? $"\n{inner}" : string.Empty);
+            var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "agentpaw_devbypass_error.txt");
+            System.IO.File.WriteAllText(logPath, $"{ex}\n\nInner:\n{ex.InnerException}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+#endif // DEBUG || DEVBYPASS
+
     [RelayCommand]
     private void CancelLogin()
     {

@@ -363,6 +363,76 @@ public class AuthService
             File.Delete(sessionPath);
     }
 
+#if DEBUG || DEVBYPASS
+    public async Task<(string Token, User User)> DevBypassLoginAsync()
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.OauthUid == "dev-bypass");
+        if (user == null)
+        {
+            user = new User
+            {
+                UserId = Guid.NewGuid().ToString(),
+                Email = "dev@agentpaw.local",
+                DisplayName = "Dev User",
+                OauthProvider = "GOOGLE",
+                OauthUid = "dev-bypass",
+                LastLoginAt = DateTimeOffset.UtcNow,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            db.Users.Add(user);
+            await db.SaveChangesAsync(); // 유저 먼저 커밋 — FK 순서 보장
+        }
+        else
+        {
+            user.LastLoginAt = DateTimeOffset.UtcNow;
+        }
+
+        var activeSessions = await db.AuthTokens
+            .Where(t => t.UserId == user.UserId && t.TokenType == "APP_SESSION" && !t.IsRevoked)
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync();
+
+        while (activeSessions.Count >= MaxActiveSessions)
+        {
+            activeSessions[0].IsRevoked = true;
+            activeSessions.RemoveAt(0);
+        }
+
+        var jwt = IssueJwt(user.UserId, user.Email);
+        var sessionToken = new AuthToken
+        {
+            TokenId = Guid.NewGuid().ToString(),
+            UserId = user.UserId,
+            TokenType = "APP_SESSION",
+            TokenValue = _encryption.Encrypt(jwt),
+            DeviceName = $"DEV:{Environment.MachineName}",
+            ExpiresAt = DateTimeOffset.UtcNow.Add(JwtExpiry),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.AuthTokens.Add(sessionToken);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            AuditId = Guid.NewGuid().ToString(),
+            UserId = user.UserId,
+            Action = "DEV_BYPASS_LOGIN",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        CurrentUserId = user.UserId;
+        CurrentTokenId = sessionToken.TokenId;
+
+        PersistSession(jwt, sessionToken.TokenId);
+
+        return (jwt, user);
+    }
+#endif // DEBUG || DEVBYPASS
+
     // --- Private helpers ---
 
     private string GetJwtSecret()

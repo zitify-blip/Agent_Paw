@@ -219,6 +219,26 @@ public partial class WorkspacePage : UserControl
         vm.RemoveAttachmentCommand.Execute(attachment);
     }
 
+    private void TeamPickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        TeamPickerPopup.IsOpen = !TeamPickerPopup.IsOpen;
+    }
+
+    private void TeamMode_Panel_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WorkspaceViewModel vm) vm.TeamMode = "panel";
+    }
+
+    private void TeamMode_Debate_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WorkspaceViewModel vm) vm.TeamMode = "debate";
+    }
+
+    private void TeamMode_Chain_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WorkspaceViewModel vm) vm.TeamMode = "chain";
+    }
+
     private void ChatTab_Click(object sender, RoutedEventArgs e)
     {
         SetTabVisibility("chat");

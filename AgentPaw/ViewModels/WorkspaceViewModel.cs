@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.EntityFrameworkCore;
+using Wpf.Ui.Controls;
 using AgentPaw.Data;
 using AgentPaw.Models;
 using AgentPaw.Orchestrator;
@@ -47,6 +49,28 @@ public partial class WorkspaceViewModel : ObservableObject
     public ObservableCollection<ChatAttachment> Attachments { get; } = [];
     public ObservableCollection<Persona> MentionCandidates { get; } = [];
 
+    // === 팀 모드 ===
+    public ObservableCollection<TeamPersonaItem> TeamPickerItems { get; } = [];
+
+    [ObservableProperty]
+    private string _teamMode = "panel"; // panel | debate | chain
+
+    public bool HasActiveTeam => TeamPickerItems.Count(x => x.IsSelected) >= 2;
+
+    public string TeamModeLabel => TeamMode switch
+    {
+        "debate" => "토론",
+        "chain" => "체인",
+        _ => "패널"
+    };
+
+    public ControlAppearance TeamModePanelAppearance =>
+        TeamMode == "panel" ? ControlAppearance.Primary : ControlAppearance.Secondary;
+    public ControlAppearance TeamModeDebateAppearance =>
+        TeamMode == "debate" ? ControlAppearance.Primary : ControlAppearance.Secondary;
+    public ControlAppearance TeamModeChainAppearance =>
+        TeamMode == "chain" ? ControlAppearance.Primary : ControlAppearance.Secondary;
+
     public bool HasAttachments => Attachments.Count > 0;
 
     [ObservableProperty]
@@ -67,6 +91,42 @@ public partial class WorkspaceViewModel : ObservableObject
         _authService = authService;
 
         Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
+
+        TeamPickerItems.CollectionChanged += (_, _) =>
+        {
+            foreach (var item in TeamPickerItems)
+                item.PropertyChanged -= OnTeamItemChanged;
+            foreach (var item in TeamPickerItems)
+                item.PropertyChanged += OnTeamItemChanged;
+            RefreshTeamState();
+        };
+    }
+
+    private void OnTeamItemChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TeamPersonaItem.IsSelected))
+            RefreshTeamState();
+    }
+
+    private void RefreshTeamState()
+    {
+        OnPropertyChanged(nameof(HasActiveTeam));
+    }
+
+    partial void OnTeamModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(TeamModeLabel));
+        OnPropertyChanged(nameof(TeamModePanelAppearance));
+        OnPropertyChanged(nameof(TeamModeDebateAppearance));
+        OnPropertyChanged(nameof(TeamModeChainAppearance));
+    }
+
+    [RelayCommand]
+    private void ClearTeam()
+    {
+        foreach (var item in TeamPickerItems)
+            item.IsSelected = false;
+        RefreshTeamState();
     }
 
     public async Task AddAttachmentsAsync(IEnumerable<string> paths)
@@ -193,6 +253,7 @@ public partial class WorkspaceViewModel : ObservableObject
         ProjectName = projectName;
         Messages.Clear();
         Personas.Clear();
+        TeamPickerItems.Clear();
         ErrorMessage = null;
 
         // 작업 폴더 경로 resolve + 재질의 정책 로드
@@ -215,6 +276,7 @@ public partial class WorkspaceViewModel : ObservableObject
                 p.Avatar = EngineAvatarService.ResolveAvatarForPersona(p.Name, p.Keywords, p.IsPm);
             }
             Personas.Add(p);
+            TeamPickerItems.Add(new TeamPersonaItem { Persona = p });
         }
 
         // 이벤트 히스토리 로드
@@ -452,15 +514,20 @@ public partial class WorkspaceViewModel : ObservableObject
 
         try
         {
-            // @mention으로 타겟이 지정되면 해당 페르소나에게 직접 라우팅한다 (PM 허브 우회)
-            var mentioned = ResolveMention(message);
+            // 팀 모드가 활성이면 선택된 페르소나 목록으로 팀 파이프라인을 실행한다.
+            // 비활성이면 @mention 라우팅(PM 허브 우회)을 사용한다.
+            var teamIds = TeamPickerItems.Where(x => x.IsSelected).Select(x => x.Persona.PersonaId).ToList();
+            var isTeamMode = teamIds.Count >= 2;
+            var mentioned = isTeamMode ? null : ResolveMention(message);
 
             var input = new OrchestratorInput
             {
                 ProjectId = ProjectId,
                 UserId = _authService.CurrentUserId,
                 Message = payloadMessage,
-                ForcePersonaId = mentioned?.PersonaId,
+                ForcePersonaId = isTeamMode ? null : mentioned?.PersonaId,
+                TeamPersonaIds = isTeamMode ? teamIds : null,
+                TeamMode = isTeamMode ? TeamMode : null,
                 AskUserEnabled = AskUserEnabled
             };
 
@@ -841,4 +908,12 @@ public class ChatAttachment
     public string Name { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
+}
+
+public partial class TeamPersonaItem : ObservableObject
+{
+    public Persona Persona { get; set; } = null!;
+
+    [ObservableProperty]
+    private bool _isSelected;
 }

@@ -27,6 +27,7 @@ public class AgentPawDbContext : DbContext
     public DbSet<ChatSpaceLink> ChatSpaceLinks => Set<ChatSpaceLink>();
     public DbSet<ChatSessionState> ChatSessionStates => Set<ChatSessionState>();
     public DbSet<ChatBotConfig> ChatBotConfigs => Set<ChatBotConfig>();
+    public DbSet<AgentTeam> AgentTeams => Set<AgentTeam>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -127,6 +128,12 @@ public class AgentPawDbContext : DbContext
         modelBuilder.Entity<ChatSessionState>(e =>
         {
             e.HasIndex(s => s.LinkId).IsUnique();
+        });
+
+        // AgentTeam
+        modelBuilder.Entity<AgentTeam>(e =>
+        {
+            e.HasIndex(t => t.ProjectId).HasDatabaseName("idx_agent_team_project");
         });
     }
 }

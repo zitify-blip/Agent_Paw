@@ -69,6 +69,7 @@ public partial class App : Application
                 services.AddSingleton<ChatDispatcherService>();
                 services.AddSingleton<PubSubPullService>();
                 services.AddSingleton<WebSocketServerService>();
+                services.AddSingleton<StatusHttpService>();
 
                 // Slack
                 services.AddSingleton<SlackChatService>();
@@ -245,6 +246,11 @@ public partial class App : Application
                 {
                     services.GetRequiredService<WebSocketServerService>().Start();
                     return Task.CompletedTask;
+                }),
+                SafeStartAsync(() =>
+                {
+                    services.GetRequiredService<StatusHttpService>().Start();
+                    return Task.CompletedTask;
                 })
             };
             await Task.WhenAll(startups);
@@ -265,6 +271,7 @@ public partial class App : Application
         try { await _host.Services.GetRequiredService<SlackSocketModeService>().StopAsync(); } catch { }
         try { await _host.Services.GetRequiredService<TelegramPollingService>().StopAsync(); } catch { }
         try { _host.Services.GetRequiredService<WebSocketServerService>().Stop(); } catch { }
+        try { _host.Services.GetRequiredService<StatusHttpService>().Stop(); } catch { }
 
         await _host.StopAsync();
         _host.Dispose();

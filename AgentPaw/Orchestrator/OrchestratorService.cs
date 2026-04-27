@@ -51,6 +51,9 @@ public class OrchestratorService
         OrchestratorInput input,
         IProgress<AgentTurn>? progress = null)
     {
+        if (input.TeamPersonaIds?.Count >= 2)
+            return await RunTeamPipelineAsync(input, progress);
+
         var personas = await _configLoader.ListPersonasAsync(input.ProjectId);
         if (personas.Count == 0)
             throw new InvalidOperationException("프로젝트에 페르소나가 없습니다.");
@@ -730,6 +733,285 @@ public class OrchestratorService
         return sb.ToString().TrimEnd();
     }
 
+    // === 팀 파이프라인 (멀티에이전트) ===
+
+    private async Task<OrchestratorOutput> RunTeamPipelineAsync(
+        OrchestratorInput input,
+        IProgress<AgentTurn>? progress)
+    {
+        var allPersonas = await _configLoader.ListPersonasAsync(input.ProjectId);
+        var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
+        var askUserEnabled = await ResolveAskUserEnabledAsync(input);
+        var runId = Guid.NewGuid().ToString("N")[..8];
+        var mode = (input.TeamMode ?? "panel").ToLowerInvariant();
+
+        var teamPersonas = input.TeamPersonaIds!
+            .Select(id => allPersonas.FirstOrDefault(p => p.PersonaId == id))
+            .Where(p => p != null)
+            .Cast<Persona>()
+            .ToList();
+
+        if (teamPersonas.Count < 2)
+            throw new InvalidOperationException("팀 모드에는 최소 2개의 페르소나가 필요합니다.");
+
+        var history = new List<AgentTurn>();
+
+        switch (mode)
+        {
+            case "debate":
+            {
+                var topic = input.Message.Length > 120 ? input.Message[..120] + "…" : input.Message;
+                await RunDiscussionAsync(
+                    input, allPersonas, teamPersonas[0], askUserEnabled,
+                    topic, string.Empty,
+                    teamPersonas, MaxDiscussionRounds, history, progress, runId);
+                break;
+            }
+            case "chain":
+                await RunChainAsync(input, teamPersonas, workspaceRoot, history, progress, runId);
+                break;
+            default:
+                await RunPanelAsync(input, teamPersonas, workspaceRoot, history, progress, runId);
+                break;
+        }
+
+        if (history.Count == 0)
+            throw new InvalidOperationException("팀 파이프라인이 응답을 생성하지 못했습니다.");
+
+        var eventId = await LogEventsAsync(input, history, runId, false, false, null, null, null);
+        var lastTurn = history[^1];
+
+        return new OrchestratorOutput
+        {
+            EventId = eventId,
+            RunId = runId,
+            PersonaId = lastTurn.PersonaId,
+            PersonaLabel = lastTurn.PersonaLabel,
+            PersonaAvatar = lastTurn.PersonaAvatar,
+            Content = lastTurn.Content,
+            ModelUsed = lastTurn.ModelUsed,
+            Verified = true,
+            Turns = history
+        };
+    }
+
+    private async Task RunPanelAsync(
+        OrchestratorInput input,
+        List<Persona> teamPersonas,
+        string workspaceRoot,
+        List<AgentTurn> history,
+        IProgress<AgentTurn>? progress,
+        string runId)
+    {
+        for (int i = 0; i < teamPersonas.Count; i++)
+        {
+            var persona = teamPersonas[i];
+            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId);
+            var streamKey = $"{runId}-panel-{i}";
+
+            var addendum = BuildTeamModeAddendum(teamPersonas, config.Name, workspaceRoot, "panel");
+            var systemPrompt = string.IsNullOrWhiteSpace(addendum)
+                ? config.SystemPrompt
+                : config.SystemPrompt + "\n\n" + addendum;
+
+            var userPrompt = await _contextInjector.InjectAsync(
+                input.Message, input.ProjectId, config.Name, 1.0);
+
+            var streamBuffer = new StringBuilder();
+            long lastEmitTicks = 0L;
+            const long EmitIntervalTicks = TimeSpan.TicksPerMillisecond * 33;
+            var turnIdx = i;
+
+            void EmitPreview(bool force)
+            {
+                if (progress == null) return;
+                var nowTicks = DateTime.UtcNow.Ticks;
+                if (!force && nowTicks - lastEmitTicks < EmitIntervalTicks) return;
+                lastEmitTicks = nowTicks;
+                progress.Report(new AgentTurn
+                {
+                    TurnIndex = turnIdx,
+                    PersonaId = config.PersonaId,
+                    PersonaName = config.Name,
+                    PersonaLabel = config.Label,
+                    PersonaAvatar = config.Avatar,
+                    Content = CleanStreamingPreview(streamBuffer.ToString()),
+                    StreamKey = streamKey,
+                    IsStreamingPreview = true
+                });
+            }
+
+            EmitPreview(force: true);
+
+            var response = await _aiClient.ChatWithFallbackStreamAsync(
+                config.PrimaryModel, config.FallbackModel,
+                systemPrompt, userPrompt,
+                config.Temperature, config.MaxTokens,
+                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); });
+
+            var eventId = Guid.NewGuid().ToString();
+            var wikiParse = WikiSaveParser.Parse(response.Content);
+            var content = wikiParse.CleanedContent;
+            foreach (var block in wikiParse.Saves)
+            {
+                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId); }
+                catch { }
+            }
+
+            var turn = new AgentTurn
+            {
+                EventId = eventId,
+                TurnIndex = i,
+                PersonaId = config.PersonaId,
+                PersonaName = config.Name,
+                PersonaLabel = config.Label,
+                PersonaAvatar = config.Avatar,
+                Content = string.IsNullOrWhiteSpace(content) ? "(응답 없음)" : content,
+                ModelUsed = response.ModelUsed,
+                StreamKey = streamKey,
+                IsStreamingPreview = false
+            };
+            history.Add(turn);
+            progress?.Report(turn);
+        }
+    }
+
+    private async Task RunChainAsync(
+        OrchestratorInput input,
+        List<Persona> teamPersonas,
+        string workspaceRoot,
+        List<AgentTurn> history,
+        IProgress<AgentTurn>? progress,
+        string runId)
+    {
+        for (int i = 0; i < teamPersonas.Count; i++)
+        {
+            var persona = teamPersonas[i];
+            var config = await _configLoader.GetPersonaConfigAsync(persona.PersonaId, input.ProjectId);
+            var streamKey = $"{runId}-chain-{i}";
+
+            var addendum = BuildTeamModeAddendum(teamPersonas, config.Name, workspaceRoot, "chain");
+            var systemPrompt = string.IsNullOrWhiteSpace(addendum)
+                ? config.SystemPrompt
+                : config.SystemPrompt + "\n\n" + addendum;
+
+            var userPrompt = i == 0
+                ? await _contextInjector.InjectAsync(input.Message, input.ProjectId, config.Name, 1.0)
+                : BuildChainContextPrompt(input.Message, history, config.Label, i);
+
+            var streamBuffer = new StringBuilder();
+            long lastEmitTicks = 0L;
+            const long EmitIntervalTicks = TimeSpan.TicksPerMillisecond * 33;
+            var turnIdx = i;
+
+            void EmitPreview(bool force)
+            {
+                if (progress == null) return;
+                var nowTicks = DateTime.UtcNow.Ticks;
+                if (!force && nowTicks - lastEmitTicks < EmitIntervalTicks) return;
+                lastEmitTicks = nowTicks;
+                progress.Report(new AgentTurn
+                {
+                    TurnIndex = turnIdx,
+                    PersonaId = config.PersonaId,
+                    PersonaName = config.Name,
+                    PersonaLabel = config.Label,
+                    PersonaAvatar = config.Avatar,
+                    Content = CleanStreamingPreview(streamBuffer.ToString()),
+                    StreamKey = streamKey,
+                    IsStreamingPreview = true
+                });
+            }
+
+            EmitPreview(force: true);
+
+            var response = await _aiClient.ChatWithFallbackStreamAsync(
+                config.PrimaryModel, config.FallbackModel,
+                systemPrompt, userPrompt,
+                config.Temperature, config.MaxTokens,
+                onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); });
+
+            var eventId = Guid.NewGuid().ToString();
+            var wikiParse = WikiSaveParser.Parse(response.Content);
+            var content = wikiParse.CleanedContent;
+            foreach (var block in wikiParse.Saves)
+            {
+                try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: eventId); }
+                catch { }
+            }
+
+            var turn = new AgentTurn
+            {
+                EventId = eventId,
+                TurnIndex = i,
+                PersonaId = config.PersonaId,
+                PersonaName = config.Name,
+                PersonaLabel = config.Label,
+                PersonaAvatar = config.Avatar,
+                Content = string.IsNullOrWhiteSpace(content) ? "(응답 없음)" : content,
+                ModelUsed = response.ModelUsed,
+                StreamKey = streamKey,
+                IsStreamingPreview = false
+            };
+            history.Add(turn);
+            progress?.Report(turn);
+        }
+    }
+
+    private static string BuildTeamModeAddendum(
+        List<Persona> teamPersonas, string currentName, string workspaceRoot, string mode)
+    {
+        var sb = new StringBuilder();
+
+        if (mode == "panel")
+        {
+            sb.AppendLine("[팀 패널 모드]");
+            sb.AppendLine("사용자가 여러 에이전트에게 동시에 독립 응답을 요청했다.");
+            sb.AppendLine("다른 에이전트의 응답을 알 수 없으므로 네 전문 영역에서 독립적으로 최선의 응답을 작성한다.");
+            sb.AppendLine("handoff / pm_report / pm_intervention 블록은 사용하지 않는다.");
+        }
+        else // chain
+        {
+            sb.AppendLine("[팀 체인 모드]");
+            sb.AppendLine("사용자가 여러 에이전트에게 순차적으로 작업을 이어받도록 요청했다.");
+            sb.AppendLine("이전 에이전트의 결과를 이어받아 네 전문 영역에서 추가 기여한다.");
+            sb.AppendLine("이미 충분히 다뤄진 내용은 반복하지 않고 네 역할에서 새로 추가할 내용에 집중한다.");
+            sb.AppendLine("handoff / pm_report / pm_intervention 블록은 사용하지 않는다.");
+        }
+
+        sb.AppendLine("참여 팀원: " + string.Join(", ",
+            teamPersonas.Select(p =>
+                $"{p.Name}({p.Label})" +
+                (string.Equals(p.Name, currentName, StringComparison.OrdinalIgnoreCase) ? " ← 너" : ""))));
+        sb.AppendLine();
+        sb.AppendLine("[위키 승격]");
+        sb.AppendLine("나중에 참조할 가치가 있는 의사결정·명세·트러블슈팅은 wiki_save 블록으로 저장한다.");
+        sb.AppendLine("```wiki_save");
+        sb.AppendLine("{\"category\": \"WIKI_ADR|WIKI_SPEC|WIKI_TROUBLE\", \"title\": \"제목\", \"content\": \"내용\"}");
+        sb.AppendLine("```");
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string BuildChainContextPrompt(
+        string originalMessage, List<AgentTurn> priorTurns, string currentLabel, int step)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[원본 사용자 요청]");
+        sb.AppendLine(originalMessage);
+        sb.AppendLine();
+        sb.AppendLine($"[이전 에이전트 응답 — {step}단계 누적]");
+        foreach (var t in priorTurns)
+        {
+            sb.AppendLine($"── {t.PersonaLabel} ──");
+            sb.AppendLine(string.IsNullOrWhiteSpace(t.Content) ? "(응답 없음)" : t.Content);
+            sb.AppendLine();
+        }
+        sb.AppendLine($"[{currentLabel}(너)의 차례 — 단계 {step + 1}]");
+        sb.AppendLine("이전 에이전트들의 작업을 이어받아 네 전문 역할에서 추가 기여한다.");
+        return sb.ToString().TrimEnd();
+    }
+
     private static void AppendWikiSaveProtocol(StringBuilder sb)
     {
         sb.AppendLine("[위키 승격 프로토콜 — wiki_save]");
@@ -1159,6 +1441,14 @@ public class OrchestratorInput
     public string UserId { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string? ForcePersonaId { get; set; }
+
+    /// <summary>
+    /// 팀 모드: 이 목록에 PersonaId가 2개 이상이면 단일 에이전트 대신 팀 파이프라인을 실행한다.
+    /// </summary>
+    public List<string>? TeamPersonaIds { get; set; }
+
+    /// <summary>panel | debate | chain — TeamPersonaIds가 있을 때만 사용.</summary>
+    public string? TeamMode { get; set; }
 
     /// <summary>
     /// PM이 User에게 재질의(pm_intervention)를 할 수 있는지 여부.

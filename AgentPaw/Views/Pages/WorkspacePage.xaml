@@ -424,6 +424,70 @@
                         BorderBrush="{DynamicResource PawBorder}"
                         Background="{DynamicResource PawCardBg}">
                     <StackPanel>
+                        <!-- Team active chips — 팀 모드 활성 시 선택된 팀원 표시 -->
+                        <Border Margin="0,0,0,8"
+                                Padding="8,6"
+                                CornerRadius="8"
+                                BorderThickness="1"
+                                Visibility="{Binding HasActiveTeam, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+                            <Border.Background>
+                                <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.06" />
+                            </Border.Background>
+                            <Border.BorderBrush>
+                                <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.3" />
+                            </Border.BorderBrush>
+                            <DockPanel>
+                                <ui:Button DockPanel.Dock="Right"
+                                           Content="팀 해제"
+                                           Appearance="Transparent"
+                                           Padding="6,3"
+                                           FontSize="11"
+                                           FontFamily="{StaticResource PawFont}"
+                                           Command="{Binding ClearTeamCommand}"
+                                           VerticalAlignment="Center" />
+                                <WrapPanel VerticalAlignment="Center">
+                                    <!-- Mode badge -->
+                                    <Border Margin="0,0,8,0" Padding="6,2" CornerRadius="10"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource PawBorder}"
+                                            Background="{DynamicResource PawCardBg}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="👥" FontSize="11"
+                                                       Margin="0,0,4,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding TeamModeLabel}"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Foreground="{DynamicResource PawGold}"
+                                                       FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <!-- Selected persona chips -->
+                                    <ItemsControl ItemsSource="{Binding TeamPickerItems}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:TeamPersonaItem}">
+                                                <Border Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}"
+                                                        Margin="0,0,6,2"
+                                                        Padding="7,2"
+                                                        CornerRadius="10"
+                                                        BorderThickness="1"
+                                                        BorderBrush="{DynamicResource PawBorder}"
+                                                        Background="{DynamicResource PawCreamBrush}">
+                                                    <TextBlock Text="{Binding Persona.Label}"
+                                                               FontSize="11"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Foreground="{Binding Persona.Color, Converter={StaticResource PersonaColorToBrushConverter}}"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </WrapPanel>
+                            </DockPanel>
+                        </Border>
+
                         <!-- Attachment chips — 첨부 파일이 있을 때만 노출 -->
                         <ItemsControl ItemsSource="{Binding Attachments}"
                                       Margin="0,0,0,8"
@@ -464,6 +528,15 @@
                         </ItemsControl>
 
                         <DockPanel>
+                            <ui:Button x:Name="TeamPickerButton"
+                                       DockPanel.Dock="Left"
+                                       Icon="{ui:SymbolIcon People24}"
+                                       Appearance="Transparent"
+                                       Margin="0,0,4,0"
+                                       VerticalAlignment="Bottom"
+                                       ToolTip="팀 구성 — 여러 에이전트와 대화"
+                                       Click="TeamPickerButton_Click"
+                                       IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBoolConverter}}" />
                             <ui:Button DockPanel.Dock="Left"
                                        Icon="{ui:SymbolIcon Attach24}"
                                        Appearance="Transparent"
@@ -493,6 +566,101 @@
                                         PreviewKeyDown="MessageInput_PreviewKeyDown"
                                         KeyDown="MessageInput_KeyDown" />
                         </DockPanel>
+
+                        <!-- Team picker popup -->
+                        <Popup x:Name="TeamPickerPopup"
+                               PlacementTarget="{Binding ElementName=TeamPickerButton}"
+                               Placement="Top"
+                               AllowsTransparency="True"
+                               StaysOpen="False">
+                            <Border Background="{DynamicResource PawCardBg}"
+                                    BorderBrush="{DynamicResource PawBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Padding="12"
+                                    MinWidth="280"
+                                    MaxHeight="380">
+                                <StackPanel>
+                                    <TextBlock Text="팀 구성"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawTextPrimary}"
+                                               Margin="0,0,0,10" />
+
+                                    <!-- Mode selector -->
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="대화 모드"
+                                                   FontSize="11"
+                                                   FontFamily="{StaticResource PawFont}"
+                                                   Foreground="{DynamicResource PawTextSecondary}"
+                                                   Margin="0,0,0,4" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:Button Content="패널"
+                                                       Appearance="{Binding TeamModePanelAppearance}"
+                                                       Padding="10,4"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Margin="0,0,4,0"
+                                                       ToolTip="각자 독립적으로 응답 (동시 패널)"
+                                                       Click="TeamMode_Panel_Click" />
+                                            <ui:Button Content="토론"
+                                                       Appearance="{Binding TeamModeDebateAppearance}"
+                                                       Padding="10,4"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Margin="0,0,4,0"
+                                                       ToolTip="라운드 테이블 토론 (stance 교환)"
+                                                       Click="TeamMode_Debate_Click" />
+                                            <ui:Button Content="체인"
+                                                       Appearance="{Binding TeamModeChainAppearance}"
+                                                       Padding="10,4"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       ToolTip="순차적으로 이어받아 작업"
+                                                       Click="TeamMode_Chain_Click" />
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Persona list -->
+                                    <TextBlock Text="참여 에이전트"
+                                               FontSize="11"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawTextSecondary}"
+                                               Margin="0,0,0,4" />
+                                    <ScrollViewer MaxHeight="200"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding TeamPickerItems}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:TeamPersonaItem}">
+                                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                              Margin="0,3"
+                                                              FontFamily="{StaticResource PawFont}">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Persona.Label}"
+                                                                       FontSize="12"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{Binding Persona.Color, Converter={StaticResource PersonaColorToBrushConverter}}"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding Persona.Name, StringFormat=' ({0})'}"
+                                                                       FontSize="11"
+                                                                       Foreground="{DynamicResource PawTextSecondary}"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </CheckBox>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+
+                                    <TextBlock Text="2명 이상 선택 시 팀 모드가 활성화됩니다."
+                                               FontSize="10"
+                                               FontFamily="{StaticResource PawFont}"
+                                               Foreground="{DynamicResource PawTextSecondary}"
+                                               Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
 
                         <!-- @mention popup -->
                         <Popup x:Name="MentionPopup"
