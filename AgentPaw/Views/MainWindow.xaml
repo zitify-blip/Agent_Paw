@@ -63,6 +63,41 @@
 
                         <!-- Navigation -->
                         <StackPanel DockPanel.Dock="Top" Margin="10,12,10,0">
+                            <!-- 대화 진행 중 배너 — 워크스페이스 외 페이지에서만 노출 -->
+                            <Border x:Name="ChatInProgressBanner"
+                                    Visibility="Collapsed"
+                                    Margin="0,0,0,8"
+                                    Padding="10,8"
+                                    CornerRadius="8"
+                                    Cursor="Hand"
+                                    BorderThickness="1"
+                                    MouseLeftButtonUp="ChatInProgressBanner_Click">
+                                <Border.Background>
+                                    <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.15" />
+                                </Border.Background>
+                                <Border.BorderBrush>
+                                    <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.45" />
+                                </Border.BorderBrush>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:ProgressRing Width="14" Height="14"
+                                                     IsIndeterminate="True"
+                                                     Foreground="{DynamicResource PawGold}"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,8,0" />
+                                    <StackPanel>
+                                        <TextBlock Text="응답 생성 중…"
+                                                   FontSize="11" FontWeight="SemiBold"
+                                                   FontFamily="{StaticResource PawFont}"
+                                                   Foreground="{DynamicResource PawGold}" />
+                                        <TextBlock x:Name="ChatInProgressProjectName"
+                                                   FontSize="10"
+                                                   FontFamily="{StaticResource PawFont}"
+                                                   Foreground="{DynamicResource PawSidebarMuted}"
+                                                   Margin="0,1,0,0" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <ui:Button x:Name="NavProjectsBtn"
                                        Content="프로젝트"
                                        Icon="{ui:SymbolIcon Folder24}"

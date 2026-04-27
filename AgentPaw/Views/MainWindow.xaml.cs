@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 using AgentPaw.Services;
 using AgentPaw.ViewModels;
 using AgentPaw.Views.Pages;
@@ -13,6 +15,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _personaInitialized;
     private bool _instructionsInitialized;
     private bool _settingsInitialized;
+    private WorkspaceViewModel? _currentWorkspaceVm;
+    private string _currentPage = "projects";
 
     public MainWindow(MainViewModel viewModel, LoginViewModel loginViewModel, DashboardViewModel dashboardViewModel, AuthService authService)
     {
@@ -79,11 +83,41 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ShowPage(string page)
     {
+        _currentPage = page;
         DashboardPageControl.Visibility = page == "projects" ? Visibility.Visible : Visibility.Collapsed;
         WorkspacePageControl.Visibility = page == "workspace" ? Visibility.Visible : Visibility.Collapsed;
         PersonaPageHost.Visibility = page == "persona" ? Visibility.Visible : Visibility.Collapsed;
         InstructionsPageHost.Visibility = page == "instructions" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPageHost.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        UpdateChatInProgressBanner();
+    }
+
+    // === 대화 진행 중 배너 ===
+
+    private void SubscribeWorkspaceVm(WorkspaceViewModel vm)
+    {
+        if (_currentWorkspaceVm != null)
+            _currentWorkspaceVm.PropertyChanged -= OnWorkspaceVmPropertyChanged;
+        _currentWorkspaceVm = vm;
+        _currentWorkspaceVm.PropertyChanged += OnWorkspaceVmPropertyChanged;
+    }
+
+    private void OnWorkspaceVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WorkspaceViewModel.IsLoading))
+            Dispatcher.Invoke(UpdateChatInProgressBanner);
+    }
+
+    private void UpdateChatInProgressBanner()
+    {
+        var show = _currentWorkspaceVm?.IsLoading == true && _currentPage != "workspace";
+        ChatInProgressBanner.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ChatInProgressProjectName.Text = _currentWorkspaceVm?.ProjectName ?? string.Empty;
+    }
+
+    private void ChatInProgressBanner_Click(object sender, MouseButtonEventArgs e)
+    {
+        ShowPage("workspace");
     }
 
     private void NavProjects_Click(object sender, RoutedEventArgs e)
@@ -149,6 +183,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         await projectSettingsVm.LoadAsync(projectId, projectName);
         WorkspacePageControl.SetProjectSettingsViewModel(projectSettingsVm);
 
+        SubscribeWorkspaceVm(workspaceVm);
         await workspaceVm.LoadWorkspaceAsync(projectId, projectName);
 
         ShowPage("workspace");
