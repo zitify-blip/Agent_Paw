@@ -984,6 +984,17 @@ public class OrchestratorService
                 $"{p.Name}({p.Label})" +
                 (string.Equals(p.Name, currentName, StringComparison.OrdinalIgnoreCase) ? " ← 너" : ""))));
         sb.AppendLine();
+        sb.AppendLine("[도구 사용]");
+        sb.AppendLine($"작업 폴더(workspace root): {workspaceRoot}");
+        sb.AppendLine("  - read_file(path) / list_dir(path?) / search_files(pattern, path?, include?)");
+        sb.AppendLine("  - write_file(path, content) — 신규 파일 전체 작성");
+        sb.AppendLine("  - edit_file(path, old_text, new_text) — 기존 파일 부분 교체 (old_text는 파일 내 1곳만 존재해야 함)");
+        sb.AppendLine("  - append_file(path, content) / make_dir(path) / delete_file(path)");
+        sb.AppendLine("  - run_command(command) — 작업 폴더 기준 셸 명령 실행 (빌드·테스트·git). 타임아웃 60초.");
+        sb.AppendLine("```tool");
+        sb.AppendLine("{\"name\": \"<도구명>\", \"args\": {<인자>}}");
+        sb.AppendLine("```");
+        sb.AppendLine();
         sb.AppendLine("[위키 승격]");
         sb.AppendLine("나중에 참조할 가치가 있는 의사결정·명세·트러블슈팅은 wiki_save 블록으로 저장한다.");
         sb.AppendLine("```wiki_save");
@@ -1056,7 +1067,7 @@ public class OrchestratorService
     private static bool IsFileWritingTool(string toolName)
     {
         var n = toolName?.ToLowerInvariant();
-        return n is "write_file" or "append_file";
+        return n is "write_file" or "append_file" or "edit_file";
     }
 
     private static string? GetStringArg(Dictionary<string, object?> args, string key)
@@ -1232,22 +1243,34 @@ public class OrchestratorService
         sb.AppendLine("모든 파일 경로는 이 폴더 기준 상대 경로를 사용한다. 절대 경로와 `..` 탈출은 거부된다.");
         sb.AppendLine();
         sb.AppendLine("사용 가능한 도구:");
-        sb.AppendLine("  - write_file(path, content): 파일 생성/덮어쓰기. 상위 폴더는 자동 생성된다.");
-        sb.AppendLine("  - append_file(path, content): 파일 끝에 내용 추가.");
+        sb.AppendLine("  [파일 읽기/탐색]");
         sb.AppendLine("  - read_file(path): 파일 내용 읽기.");
-        sb.AppendLine("  - list_dir(path): 폴더 목록. path 생략 시 루트.");
+        sb.AppendLine("  - list_dir(path?): 폴더 목록. path 생략 시 루트.");
+        sb.AppendLine("  - search_files(pattern, path?, include?): 텍스트 패턴으로 파일 검색.");
+        sb.AppendLine("      path: 검색 루트 (생략 시 전체). include: 파일 패턴 (예: \"*.cs\", \"*.ts\").");
+        sb.AppendLine("  [파일 쓰기]");
+        sb.AppendLine("  - write_file(path, content): 파일 생성/전체 덮어쓰기. 상위 폴더 자동 생성.");
+        sb.AppendLine("  - edit_file(path, old_text, new_text): 파일에서 old_text를 찾아 new_text로 교체.");
+        sb.AppendLine("      old_text는 파일에 정확히 1곳만 존재해야 한다. 기존 파일 부분 수정 시 이 도구를 사용한다.");
+        sb.AppendLine("  - append_file(path, content): 파일 끝에 내용 추가.");
         sb.AppendLine("  - make_dir(path): 폴더 생성.");
-        sb.AppendLine("  - delete_file(path): 파일을 .trash/<timestamp>/ 로 이동한다 (하드 삭제 아님, 복구 가능).");
+        sb.AppendLine("  - delete_file(path): 파일을 .trash/<timestamp>/ 로 이동 (복구 가능).");
+        sb.AppendLine("  [명령 실행]");
+        sb.AppendLine("  - run_command(command): 작업 폴더 기준으로 셸 명령 실행. 타임아웃 60초.");
+        sb.AppendLine("      빌드·테스트·git 조회·패키지 설치 등 개발 루프에 활용한다.");
+        sb.AppendLine("      예: run_command({\"command\": \"dotnet build\"})");
         sb.AppendLine();
         sb.AppendLine("도구 호출 형식 (필요할 때만 사용, 한 응답에 여러 개 가능):");
         sb.AppendLine("```tool");
-        sb.AppendLine("{\"name\": \"write_file\", \"args\": {\"path\": \"src/Foo.cs\", \"content\": \"...\"}}");
+        sb.AppendLine("{\"name\": \"edit_file\", \"args\": {\"path\": \"src/Foo.cs\", \"old_text\": \"기존 코드\", \"new_text\": \"새 코드\"}}");
         sb.AppendLine("```");
         sb.AppendLine();
         sb.AppendLine("규칙:");
         sb.AppendLine("- 도구 호출이 있으면 시스템이 실행 후 결과를 돌려주며, 그때 다시 응답하여 작업을 이어간다.");
         sb.AppendLine("- 같은 응답에 tool과 handoff를 함께 쓰지 않는다. tool이 있으면 tool이 우선이다.");
-        sb.AppendLine("- 파일을 만들 때 content는 전체 파일 내용을 완전한 형태로 작성한다 (부분 diff 금지).");
+        sb.AppendLine("- 파일을 새로 만들 때는 write_file에 전체 내용을 완성된 형태로 작성한다.");
+        sb.AppendLine("- 기존 파일을 수정할 때는 edit_file로 최소한의 범위만 교체한다 (불필요한 전체 덮어쓰기 금지).");
+        sb.AppendLine("- run_command 실행 후 오류가 있으면 원인을 분석하고 수정하여 다시 실행한다.");
         sb.AppendLine("- 사용자 요청을 완료했으면 도구 없이 평문으로 요약해 마무리한다.");
 
         return sb.ToString().TrimEnd();

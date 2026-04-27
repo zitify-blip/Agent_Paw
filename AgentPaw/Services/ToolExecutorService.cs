@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.IO;
+using System.Text;
 
 namespace AgentPaw.Services;
 
@@ -20,18 +22,21 @@ public class ToolExecutorService
             var rootFull = NormalizeDir(Path.GetFullPath(workspaceRoot));
 
             var lower = toolName.ToLowerInvariant();
-            var writeOps = lower is "write_file" or "append_file" or "delete_file" or "make_dir";
+            var writeOps = lower is "write_file" or "append_file" or "edit_file" or "delete_file" or "make_dir";
             if (writeOps && IsUnderTrash(args))
                 return Fail(".trash/ 경로에는 쓰기/삭제가 불가하다 (복구 저장소 보호).");
 
             return lower switch
             {
-                "write_file" => await WriteFileAsync(rootFull, args),
-                "append_file" => await AppendFileAsync(rootFull, args),
-                "read_file" => await ReadFileAsync(rootFull, args),
-                "list_dir" => ListDir(rootFull, args),
-                "delete_file" => DeleteFile(rootFull, args),
-                "make_dir" => MakeDir(rootFull, args),
+                "write_file"   => await WriteFileAsync(rootFull, args),
+                "append_file"  => await AppendFileAsync(rootFull, args),
+                "edit_file"    => await EditFileAsync(rootFull, args),
+                "read_file"    => await ReadFileAsync(rootFull, args),
+                "list_dir"     => ListDir(rootFull, args),
+                "search_files" => SearchFiles(rootFull, args),
+                "delete_file"  => DeleteFile(rootFull, args),
+                "make_dir"     => MakeDir(rootFull, args),
+                "run_command"  => await RunCommandAsync(rootFull, args),
                 _ => Fail($"알 수 없는 도구: {toolName}")
             };
         }
@@ -157,6 +162,154 @@ public class ToolExecutorService
         var full = ResolveInside(root, path);
         Directory.CreateDirectory(full);
         return Ok($"ok — {RelOf(root, full)} 생성");
+    }
+
+    // edit_file: old_text를 new_text로 정확히 1곳 교체.
+    // 0곳이면 미발견 오류, 2곳 이상이면 모호 오류를 반환하여 의도치 않은 다중 치환을 방지한다.
+    private static async Task<ToolExecutionResult> EditFileAsync(string root, Dictionary<string, object?> args)
+    {
+        var path    = RequireString(args, "path");
+        var oldText = RequireString(args, "old_text");
+        var newText = GetString(args, "new_text") ?? string.Empty;
+        var full    = ResolveInside(root, path);
+
+        if (!File.Exists(full))
+            return Fail($"파일 없음: {RelOf(root, full)}");
+
+        var info = new FileInfo(full);
+        if (info.Length > MaxFileBytes)
+            return Fail($"파일이 너무 크다 ({info.Length} bytes)");
+
+        var content = await File.ReadAllTextAsync(full, new System.Text.UTF8Encoding(false));
+        var count   = CountOccurrences(content, oldText);
+
+        if (count == 0)
+            return Fail("old_text를 파일에서 찾지 못했다. 공백·줄바꿈을 포함하여 정확히 일치해야 한다.");
+
+        if (count > 1)
+            return Fail($"old_text가 파일 내 {count}곳에서 발견됐다. 더 많은 주변 컨텍스트를 포함하여 유일하게 특정한다.");
+
+        var newContent = content.Replace(oldText, newText, StringComparison.Ordinal);
+        await File.WriteAllTextAsync(full, newContent, new System.Text.UTF8Encoding(false));
+        return Ok($"ok — {RelOf(root, full)} 편집 완료");
+    }
+
+    // search_files: 텍스트 패턴(대소문자 무시)으로 파일 검색.
+    // include 인자로 파일 패턴 필터 가능 (예: "*.cs"). 최대 300줄 반환.
+    private static ToolExecutionResult SearchFiles(string root, Dictionary<string, object?> args)
+    {
+        var pattern     = RequireString(args, "pattern");
+        var searchRel   = GetString(args, "path") ?? ".";
+        var fileGlob    = GetString(args, "include") ?? "*";
+        var full        = ResolveInside(root, searchRel);
+
+        if (!Directory.Exists(full) && !File.Exists(full))
+            return Fail($"경로 없음: {searchRel}");
+
+        var files = File.Exists(full)
+            ? (IEnumerable<string>)[full]
+            : Directory.EnumerateFiles(full, fileGlob, SearchOption.AllDirectories)
+                       .Where(f => !f.Replace('\\', '/').Contains("/.git/")
+                                && !f.Replace('\\', '/').Contains("/.trash/")
+                                && !f.Replace('\\', '/').Contains("/bin/")
+                                && !f.Replace('\\', '/').Contains("/obj/")
+                                && !f.Replace('\\', '/').Contains("/node_modules/"));
+
+        var results = new List<string>();
+        const int MaxLines = 300;
+
+        foreach (var file in files)
+        {
+            if (results.Count >= MaxLines) { results.Add("...[이하 결과 생략]"); break; }
+            try
+            {
+                var lines = File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    if (!lines[i].Contains(pattern, StringComparison.OrdinalIgnoreCase)) continue;
+                    results.Add($"{RelOf(root, file)}:{i + 1}: {lines[i].Trim()}");
+                    if (results.Count >= MaxLines) { results.Add("...[이하 결과 생략]"); break; }
+                }
+            }
+            catch { /* 바이너리 등 읽기 불가 파일은 건너뜀 */ }
+        }
+
+        return results.Count == 0
+            ? Ok($"'{pattern}' 패턴과 일치하는 결과 없음")
+            : Ok(string.Join("\n", results));
+    }
+
+    // run_command: workspaceRoot를 CWD로 하여 셸 명령 실행. 타임아웃 60초.
+    private static async Task<ToolExecutionResult> RunCommandAsync(string root, Dictionary<string, object?> args)
+    {
+        var command = RequireString(args, "command");
+
+        // 명백히 파괴적인 패턴만 차단한다
+        var norm = command.ToLowerInvariant();
+        string[] blocked = ["rm -rf /", "format c:", "del /f /s /q c:\\", ":(){:|:&};:"];
+        foreach (var b in blocked)
+            if (norm.Contains(b)) return Fail("위험한 패턴이 포함된 명령어다. 실행을 거부했다.");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName               = "cmd.exe",
+            Arguments              = "/c " + command,
+            WorkingDirectory       = root,
+            UseShellExecute        = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            CreateNoWindow         = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding  = Encoding.UTF8
+        };
+
+        Process proc;
+        try   { proc = Process.Start(psi) ?? throw new InvalidOperationException("프로세스 시작 실패"); }
+        catch (Exception ex) { return Fail($"프로세스 실행 오류: {ex.Message}"); }
+
+        using (proc)
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var outTask = proc.StandardOutput.ReadToEndAsync(cts.Token);
+            var errTask = proc.StandardError.ReadToEndAsync(cts.Token);
+
+            try   { await proc.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return Fail("명령 실행 시간 초과 (60초). 프로세스를 강제 종료했다.");
+            }
+
+            var stdout = (await outTask).TrimEnd();
+            var stderr = (await errTask).TrimEnd();
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[exit code: {proc.ExitCode}]");
+            if (!string.IsNullOrEmpty(stdout))
+                sb.AppendLine(stdout.Length > 8000 ? stdout[..8000] + "\n...[truncated]" : stdout);
+            if (!string.IsNullOrEmpty(stderr))
+            {
+                sb.AppendLine("--- stderr ---");
+                sb.AppendLine(stderr.Length > 4000 ? stderr[..4000] + "\n...[truncated]" : stderr);
+            }
+
+            var output = sb.ToString().TrimEnd();
+            return proc.ExitCode == 0
+                ? Ok(output)
+                : new ToolExecutionResult { Success = false, Message = output };
+        }
+    }
+
+    private static int CountOccurrences(string text, string pattern)
+    {
+        var count = 0;
+        var idx   = 0;
+        while ((idx = text.IndexOf(pattern, idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += pattern.Length;
+        }
+        return count;
     }
 
     private static string ResolveInside(string rootFull, string relative)
