@@ -47,7 +47,7 @@
                                ToolTip="대화 전체 markdown으로 클립보드 복사" />
                     <!-- Google Docs 내보내기 버튼 + 팝업 -->
                     <Grid>
-                        <ui:Button Icon="{ui:SymbolIcon DocumentArrowUp24}"
+                        <ui:Button Icon="{ui:SymbolIcon ArrowExportUp24}"
                                    Appearance="Transparent"
                                    Command="{Binding OpenGoogleDocsPopupCommand}"
                                    Margin="0,0,4,0"

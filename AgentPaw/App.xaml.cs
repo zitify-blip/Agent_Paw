@@ -72,6 +72,9 @@ public partial class App : Application
                 services.AddSingleton<WebSocketServerService>();
                 services.AddSingleton<StatusHttpService>();
 
+                // Mobile API
+                services.AddSingleton<MobileApiService>();
+
                 // Slack
                 services.AddSingleton<SlackChatService>();
                 services.AddSingleton<SlackSocketModeService>();
@@ -253,7 +256,8 @@ public partial class App : Application
                 {
                     services.GetRequiredService<StatusHttpService>().Start();
                     return Task.CompletedTask;
-                })
+                }),
+                SafeStartAsync(() => services.GetRequiredService<MobileApiService>().StartAsync())
             };
             await Task.WhenAll(startups);
         });
