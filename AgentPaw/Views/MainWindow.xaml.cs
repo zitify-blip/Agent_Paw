@@ -40,6 +40,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 UpdateVisibility();
         };
 
+        // 사이드바 버전 표시
+        var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        VersionLabel.Text = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : string.Empty;
+
         // 저장된 세션 복원 시도
         Loaded += async (_, _) => await TryRestoreSessionAsync();
     }

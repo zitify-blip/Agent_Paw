@@ -172,7 +172,7 @@
 
                         <!-- Version -->
                         <StackPanel DockPanel.Dock="Bottom" Margin="16,0">
-                            <TextBlock Text="v0.3.0" FontSize="10" Foreground="{DynamicResource PawSidebarVersion}"
+                            <TextBlock x:Name="VersionLabel" FontSize="10" Foreground="{DynamicResource PawSidebarVersion}"
                                        FontFamily="{StaticResource PawFont}"
                                        HorizontalAlignment="Center" />
                         </StackPanel>
