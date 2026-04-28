@@ -88,6 +88,10 @@ public partial class App : Application
                 services.AddSingleton<PersonaService>();
                 services.AddSingleton<ClaudeCliService>();
 
+                // Dev Agent
+                services.AddSingleton<DevAgentService>();
+                services.AddSingleton<DevAgentViewModel>();
+
                 // ViewModels
                 services.AddSingleton<MainViewModel>();
                 services.AddTransient<LoginViewModel>();

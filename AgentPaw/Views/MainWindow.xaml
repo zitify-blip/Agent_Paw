@@ -108,6 +108,16 @@
                                        HorizontalContentAlignment="Left"
                                        Margin="0,1" Padding="12,8"
                                        Click="NavProjects_Click" />
+                            <ui:Button x:Name="NavDevAgentBtn"
+                                       Content="개발"
+                                       Icon="{ui:SymbolIcon Code24}"
+                                       Appearance="Transparent"
+                                       Foreground="{DynamicResource PawSidebarText}"
+                                       FontFamily="{StaticResource PawFont}"
+                                       HorizontalAlignment="Stretch"
+                                       HorizontalContentAlignment="Left"
+                                       Margin="0,1" Padding="12,8"
+                                       Click="NavDevAgent_Click" />
                             <ui:Button x:Name="NavPersonaBtn"
                                        Content="페르소나"
                                        Icon="{ui:SymbolIcon PeopleTeam24}"
@@ -316,6 +326,7 @@
                         <ContentControl x:Name="PersonaPageHost" Visibility="Collapsed" />
                         <ContentControl x:Name="InstructionsPageHost" Visibility="Collapsed" />
                         <ContentControl x:Name="SettingsPageHost" Visibility="Collapsed" />
+                        <ContentControl x:Name="DevAgentPageHost" Visibility="Collapsed" />
                     </Grid>
                 </Grid>
             </Border>

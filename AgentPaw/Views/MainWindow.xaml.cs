@@ -18,6 +18,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _llmInitialized;
     private bool _integrationInitialized;
     private bool _otherSettingsInitialized;
+    private bool _devAgentInitialized;
     private SettingsViewModel? _settingsVm;
     private WorkspaceViewModel? _currentWorkspaceVm;
     private string _currentPage = "projects";
@@ -102,6 +103,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         PersonaPageHost.Visibility = page == "persona" ? Visibility.Visible : Visibility.Collapsed;
         InstructionsPageHost.Visibility = page == "instructions" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPageHost.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        DevAgentPageHost.Visibility = page == "devagent" ? Visibility.Visible : Visibility.Collapsed;
         UpdateChatInProgressBanner();
     }
 
@@ -223,6 +225,30 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private LlmSettingsPage? _llmPage;
     private IntegrationSettingsPage? _integrationPage;
     private OtherSettingsPage? _otherSettingsPage;
+    private DevAgentPage? _devAgentPage;
+
+    private void NavDevAgent_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_devAgentInitialized)
+        {
+            var vm = App.GetService<DevAgentViewModel>();
+            _devAgentPage = new DevAgentPage();
+            _devAgentPage.Initialize(vm);
+            DevAgentPageHost.Content = _devAgentPage;
+            _devAgentInitialized = true;
+        }
+
+        // 현재 열려있는 프로젝트의 작업 디렉토리를 dev agent에 전달
+        if (_currentWorkspaceVm != null)
+        {
+            var vm = App.GetService<DevAgentViewModel>();
+            vm.SetProject(
+                _currentWorkspaceVm.ProjectName ?? "",
+                _currentWorkspaceVm.WorkspacePath ?? "");
+        }
+
+        ShowPage("devagent");
+    }
 
     // === Project ===
 
