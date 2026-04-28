@@ -148,6 +148,78 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 대화 설정 -->
+                <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="대화 설정" FontSize="16" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextPrimary}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="토론 라운드 수·참여자 수·PM 재질의 허용 여부를 프로젝트별로 설정한다."
+                                   FontSize="11" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}"
+                                   Margin="0,0,0,16" />
+
+                        <!-- 최대 토론 라운드 -->
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="최대 토론 라운드"
+                                       FontSize="13" FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextPrimary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding MaxDiscussionRounds, StringFormat={}{0}라운드}"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawGold}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </DockPanel>
+                        <Slider Minimum="1" Maximum="10"
+                                TickFrequency="1" IsSnapToTickEnabled="True"
+                                Value="{Binding MaxDiscussionRounds, Mode=TwoWay}"
+                                Margin="0,0,0,16" />
+
+                        <!-- 최대 참여자 수 -->
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="최대 참여자 수"
+                                       FontSize="13" FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextPrimary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding MaxDiscussionParticipants, StringFormat={}{0}명}"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawGold}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </DockPanel>
+                        <Slider Minimum="2" Maximum="8"
+                                TickFrequency="1" IsSnapToTickEnabled="True"
+                                Value="{Binding MaxDiscussionParticipants, Mode=TwoWay}"
+                                Margin="0,0,0,16" />
+
+                        <!-- PM 재질의 허용 -->
+                        <CheckBox IsChecked="{Binding AskUserEnabled}"
+                                  Content="PM이 사용자에게 재질의(pm_intervention)할 수 있도록 허용"
+                                  FontFamily="{StaticResource PawFont}"
+                                  FontSize="13"
+                                  Foreground="{DynamicResource PawTextPrimary}"
+                                  Margin="0,0,0,16" />
+
+                        <!-- 저장 -->
+                        <StackPanel Orientation="Horizontal">
+                            <ui:Button Content="저장" Appearance="Primary" Padding="12,4"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Command="{Binding SaveDiscussionSettingsCommand}" />
+                            <TextBlock Text="{Binding DiscussionSaveMessage}"
+                                       Margin="12,0,0,0"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextSecondary}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Personas -->
                 <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
                     <StackPanel>

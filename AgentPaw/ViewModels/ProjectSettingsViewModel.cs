@@ -54,6 +54,12 @@ public partial class ProjectSettingsViewModel : ObservableObject
     [ObservableProperty] private string _effectiveWorkspacePath = string.Empty;
     [ObservableProperty] private string? _workspaceSaveMessage;
 
+    // === 대화 설정 ===
+    [ObservableProperty] private int _maxDiscussionRounds = 10;
+    [ObservableProperty] private int _maxDiscussionParticipants = 4;
+    [ObservableProperty] private bool _askUserEnabled = true;
+    [ObservableProperty] private string? _discussionSaveMessage;
+
     // === Git 클론 ===
     [ObservableProperty] private string _cloneUrl = string.Empty;
     [ObservableProperty] private string _cloneToken = string.Empty;
@@ -256,6 +262,10 @@ public partial class ProjectSettingsViewModel : ObservableObject
                 WorkspacePath = project?.GitRepoPath ?? string.Empty;
                 EffectiveWorkspacePath = string.IsNullOrWhiteSpace(WorkspacePath) ? DefaultWorkspacePath(ProjectId) : WorkspacePath;
                 WorkspaceSaveMessage = null;
+                MaxDiscussionRounds = project?.MaxDiscussionRounds ?? 10;
+                MaxDiscussionParticipants = project?.MaxDiscussionParticipants ?? 4;
+                AskUserEnabled = project?.AskUserEnabled ?? true;
+                DiscussionSaveMessage = null;
             }
         }
         catch (Exception ex)
@@ -893,6 +903,32 @@ public partial class ProjectSettingsViewModel : ObservableObject
     }
 
     // === Workspace folder ===
+
+    [RelayCommand]
+    private async Task SaveDiscussionSettingsAsync()
+    {
+        if (string.IsNullOrEmpty(ProjectId)) return;
+
+        IsLoading = true;
+        DiscussionSaveMessage = null;
+        ErrorMessage = null;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var project = await db.Projects.FindAsync(ProjectId);
+            if (project == null) { ErrorMessage = "프로젝트를 찾지 못했다."; return; }
+
+            project.MaxDiscussionRounds = Math.Clamp(MaxDiscussionRounds, 1, 10);
+            project.MaxDiscussionParticipants = Math.Clamp(MaxDiscussionParticipants, 2, 8);
+            project.AskUserEnabled = AskUserEnabled;
+            project.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+
+            DiscussionSaveMessage = "저장됨";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsLoading = false; }
+    }
 
     [RelayCommand]
     private async Task SaveWorkspacePathAsync()
