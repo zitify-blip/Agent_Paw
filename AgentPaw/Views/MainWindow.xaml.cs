@@ -120,8 +120,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnWorkspaceVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(WorkspaceViewModel.IsLoading))
-            Dispatcher.Invoke(UpdateChatInProgressBanner);
+        Dispatcher.Invoke(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(WorkspaceViewModel.IsLoading):
+                    UpdateChatInProgressBanner();
+                    DogPanel.SetActive(_currentWorkspaceVm?.IsLoading == true);
+                    break;
+                case nameof(WorkspaceViewModel.StreamingPersonaId):
+                case nameof(WorkspaceViewModel.StreamingPreview):
+                    DogPanel.SetSpeaker(
+                        _currentWorkspaceVm?.StreamingPersonaId,
+                        _currentWorkspaceVm?.StreamingPreview);
+                    break;
+            }
+        });
     }
 
     private void UpdateChatInProgressBanner()
@@ -301,6 +315,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         _dashboardViewModel.ActiveProjectId = projectId;
         ShowPage("workspace");
+
+        // Wire dog animation panel now that personas are loaded
+        DogPanel.SetPersonas(workspaceVm.Personas);
+        DogPanel.Visibility = Visibility.Visible;
+        DogPanel.SetActive(workspaceVm.IsLoading);
     }
 
     private void OnWorkspaceBack()
@@ -313,6 +332,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _workspaceVmCache.Clear();
         _timelineVmCache.Clear();
         _wikiVmCache.Clear();
+        DogPanel.Visibility = Visibility.Collapsed;
+        DogPanel.SetPersonas([]);
         await _viewModel.LogoutCommand.ExecuteAsync(null);
         UpdateVisibility();
     }

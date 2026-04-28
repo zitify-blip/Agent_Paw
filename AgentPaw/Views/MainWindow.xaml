@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:pages="clr-namespace:AgentPaw.Views.Pages"
+        xmlns:controls="clr-namespace:AgentPaw.Views.Controls"
         Title="Agent Paw"
         Icon="pack://application:,,,/Assets/app.ico"
         Width="1440" Height="900"
@@ -250,10 +251,15 @@
                     </Style>
                 </Border.Style>
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="48"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                 <!-- Paper grain noise -->
-                <Border Background="{StaticResource PaperGrainBrush}" IsHitTestVisible="False" />
+                <Border Grid.RowSpan="3" Background="{StaticResource PaperGrainBrush}" IsHitTestVisible="False" />
                     <!-- Header Bar -->
-                    <Border Height="48" VerticalAlignment="Top"
+                    <Border Grid.Row="0"
                             Padding="20,0"
                             BorderThickness="0,0,0,1"
                             BorderBrush="{DynamicResource PawBorder}">
@@ -310,7 +316,7 @@
                     </Border>
 
                     <!-- Page Content -->
-                    <Grid Margin="0,48,0,0">
+                    <Grid Grid.Row="1">
                         <pages:DashboardPage x:Name="DashboardPageControl" />
                         <pages:WorkspacePage x:Name="WorkspacePageControl" Visibility="Collapsed" />
                         <ContentControl x:Name="PersonaPageHost" Visibility="Collapsed" />
@@ -318,6 +324,11 @@
                         <ContentControl x:Name="SettingsPageHost" Visibility="Collapsed" />
                         <ContentControl x:Name="DevAgentPageHost" Visibility="Collapsed" />
                     </Grid>
+
+                    <!-- Dog Animation Panel -->
+                    <controls:DogAnimationPanel x:Name="DogPanel"
+                                                Grid.Row="2"
+                                                Visibility="Collapsed" />
                 </Grid>
             </Border>
         </Grid>

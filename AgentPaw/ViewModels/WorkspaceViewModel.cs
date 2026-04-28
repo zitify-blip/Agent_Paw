@@ -101,6 +101,12 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private ChatMessage? _detailMessage;
 
+    [ObservableProperty]
+    private string? _streamingPersonaId;
+
+    [ObservableProperty]
+    private string? _streamingPreview;
+
     public WorkspaceViewModel(
         OrchestratorService orchestrator,
         ConfigLoaderService configLoader,
@@ -568,6 +574,9 @@ public partial class WorkspaceViewModel : ObservableObject
 
                 if (turn.IsStreamingPreview)
                 {
+                    StreamingPersonaId = turn.PersonaId;
+                    StreamingPreview = turn.Content;
+
                     // 프리뷰: 기존 메시지가 있으면 Content만 갱신, 없으면 최초 청크로 새 메시지 생성
                     if (existingIdx >= 0)
                     {
@@ -579,6 +588,8 @@ public partial class WorkspaceViewModel : ObservableObject
                     }
                     return;
                 }
+
+                StreamingPersonaId = turn.PersonaId;
 
                 // 최종 턴: 프리뷰 메시지를 완성본으로 치환한다
                 var finalized = BuildAssistantMessage(turn, previewOnly: false);
@@ -682,6 +693,8 @@ public partial class WorkspaceViewModel : ObservableObject
         }
         finally
         {
+            StreamingPersonaId = null;
+            StreamingPreview = null;
             IsLoading = false;
             _cts?.Dispose();
             _cts = null;
