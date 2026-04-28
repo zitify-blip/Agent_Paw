@@ -61,7 +61,7 @@ class _ModelSettingsScreenState extends State<ModelSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('모델 설정')),
+      appBar: AppBar(title: const Text('API 설정')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

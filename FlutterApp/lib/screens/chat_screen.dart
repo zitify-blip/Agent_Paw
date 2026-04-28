@@ -250,7 +250,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         builder: (_) => ProjectSettingsScreen(
                             project: widget.project)),
                   );
-                case 'model_settings':
+                case 'api_settings':
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -265,7 +265,7 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'timeline', child: Text('타임라인')),
               PopupMenuDivider(),
               PopupMenuItem(value: 'env_settings', child: Text('환경 설정')),
-              PopupMenuItem(value: 'model_settings', child: Text('모델 설정')),
+              PopupMenuItem(value: 'api_settings', child: Text('API 설정')),
             ],
           ),
         ],
@@ -291,7 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     },
                     child: ListView.builder(
                       controller: _scrollCtrl,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.only(top: 8, bottom: 16),
                       itemCount: _messages.length,
                       itemBuilder: (ctx, i) {
                         final m = _messages[i];
@@ -315,7 +315,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildInput() {
     return Container(
       padding: EdgeInsets.fromLTRB(
-          12, 8, 12, 8 + MediaQuery.of(context).viewInsets.bottom),
+          16, 8, 16,
+          8 + MediaQuery.of(context).viewInsets.bottom +
+              (MediaQuery.of(context).viewInsets.bottom > 0
+                  ? 0
+                  : MediaQuery.of(context).padding.bottom)),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
