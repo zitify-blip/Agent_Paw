@@ -651,43 +651,22 @@ public partial class WorkspaceViewModel : ObservableObject
             });
 
             var pm = Personas.FirstOrDefault(p => p.IsPm);
-            if (pm != null && _authService.CurrentUserId != null)
+            if (pm != null)
             {
                 try
                 {
-                    using var summaryCts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                    using var summaryCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                     var priorConversation = BuildPriorConversation();
-                    var summaryInput = new OrchestratorInput
-                    {
-                        ProjectId = ProjectId,
-                        UserId = _authService.CurrentUserId,
-                        Message = "대화가 중단되었습니다. 지금까지 논의된 내용을 간결하게 정리하고, 현재 진행 상태와 미결 사항을 요약해주세요.",
-                        ForcePersonaId = pm.PersonaId,
-                        AskUserEnabled = false,
-                        PriorConversation = priorConversation.Count > 0 ? priorConversation : null
-                    };
-                    var summaryProgress = new Progress<AgentTurn>(turn =>
-                    {
-                        var existingIdx = !string.IsNullOrEmpty(turn.StreamKey)
-                            ? IndexOfStreamKey(turn.StreamKey)
-                            : -1;
-                        if (turn.IsStreamingPreview)
+                    var summary = await _orchestrator.SummarizeCancelAsync(
+                        ProjectId, pm.PersonaId, priorConversation, summaryCts.Token);
+                    if (!string.IsNullOrWhiteSpace(summary))
+                        Messages.Add(new ChatMessage
                         {
-                            if (existingIdx >= 0)
-                                Messages[existingIdx].Content = turn.Content;
-                            else
-                                Messages.Add(BuildAssistantMessage(turn, previewOnly: true));
-                        }
-                        else
-                        {
-                            var finalized = BuildAssistantMessage(turn, previewOnly: false);
-                            if (existingIdx >= 0)
-                                Messages[existingIdx] = finalized;
-                            else
-                                Messages.Add(finalized);
-                        }
-                    });
-                    await _orchestrator.RunPipelineAsync(summaryInput, summaryProgress, summaryCts.Token);
+                            Role = "assistant",
+                            Content = summary,
+                            PersonaLabel = pm.Label,
+                            Timestamp = DateTimeOffset.UtcNow
+                        });
                 }
                 catch { /* 요약 실패 무시 */ }
             }
@@ -972,9 +951,9 @@ public partial class WorkspaceViewModel : ObservableObject
         while (result.Count > 0 && result[0].Role != "user")
             result.RemoveAt(0);
 
-        // 최대 20턴(10회 교환)으로 제한
-        if (result.Count > 20)
-            result = result.Skip(result.Count - 20).ToList();
+        // 최대 12턴(6회 교환)으로 제한
+        if (result.Count > 12)
+            result = result.Skip(result.Count - 12).ToList();
 
         // Skip 후 다시 user로 시작하도록 보정
         while (result.Count > 0 && result[0].Role != "user")

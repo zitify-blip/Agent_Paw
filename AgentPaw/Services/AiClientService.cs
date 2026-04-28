@@ -40,6 +40,19 @@ public class AiClientService
         _httpClient = httpClientFactory.CreateClient();
     }
 
+    public async Task<string> ChatWithFastModelAsync(
+        string systemPrompt,
+        string userMessage,
+        int maxTokens = 2048,
+        CancellationToken ct = default)
+    {
+        var response = await ChatWithModelStreamAsync(
+            "claude-haiku", systemPrompt, userMessage,
+            temperature: 0.3f, maxTokens, onDelta: null, history: null, ct)
+            .ConfigureAwait(false);
+        return response.Content;
+    }
+
     public Task<AiResponse> ChatWithFallbackAsync(
         string primaryModel,
         string? fallbackModel,
@@ -180,7 +193,10 @@ public class AiClientService
             model = resolvedModel,
             max_tokens = maxTokens,
             temperature,
-            system = systemPrompt,
+            system = new[]
+            {
+                new { type = "text", text = systemPrompt, cache_control = new { type = "ephemeral" } }
+            },
             stream = true,
             messages
         };
@@ -192,6 +208,7 @@ public class AiClientService
         };
         httpRequest.Headers.Add("x-api-key", apiKey);
         httpRequest.Headers.Add("anthropic-version", "2023-06-01");
+        httpRequest.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31");
 
         var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 

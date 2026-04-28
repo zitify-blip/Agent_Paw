@@ -1703,6 +1703,27 @@ public class OrchestratorService
         return lastEventId;
     }
 
+    public async Task<string> SummarizeCancelAsync(
+        string projectId, string personaId,
+        IReadOnlyList<ConversationTurn> prior,
+        CancellationToken ct = default)
+    {
+        var config = await _configLoader.GetPersonaConfigAsync(personaId, projectId);
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var t in prior)
+        {
+            var label = t.Role == "user" ? "User" : "Assistant";
+            sb.AppendLine($"[{label}]\n{t.Content}\n");
+        }
+
+        var userMsg = prior.Count > 0
+            ? sb + "\n---\n대화가 중단되었습니다. 지금까지 논의된 내용을 간결하게 정리하고, 현재 진행 상태와 미결 사항을 요약해주세요."
+            : "대화가 중단되었습니다. 진행 내용이 없습니다.";
+
+        return await _aiClient.ChatWithFastModelAsync(config.SystemPrompt, userMsg, maxTokens: 2048, ct);
+    }
+
     public async Task<List<WikiDocument>> ConsolidateWikiAsync(string projectId)
     {
         // Load last 200 conversation events
@@ -1756,11 +1777,6 @@ public class OrchestratorService
                 existingSb.AppendLine("---");
             }
         }
-
-        var personas = await _configLoader.ListPersonasAsync(projectId);
-        var pm = personas.FirstOrDefault(p => p.IsPm) ?? personas.FirstOrDefault();
-        var primaryModel = pm?.PrimaryModel ?? "claude-sonnet-4-6";
-        var fallbackModel = pm?.FallbackModel;
 
         var systemPrompt = """
 You are a knowledge management specialist organizing a project wiki.
@@ -1829,15 +1845,14 @@ Rules:
             userContent.AppendLine(transcriptSb.ToString());
         }
 
-        var response = await _aiClient.ChatWithFallbackAsync(
-            primaryModel, fallbackModel, systemPrompt, userContent.ToString(),
-            temperature: 0.2f, maxTokens: 8192
+        var responseContent = await _aiClient.ChatWithFastModelAsync(
+            systemPrompt, userContent.ToString(), maxTokens: 4096
         );
 
         var modified = new List<WikiDocument>();
         try
         {
-            var text = response.Content.Trim();
+            var text = responseContent.Trim();
             if (text.StartsWith("```")) text = text[(text.IndexOf('\n') + 1)..];
             if (text.EndsWith("```")) text = text[..text.LastIndexOf("```")].TrimEnd();
 
