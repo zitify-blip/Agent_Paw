@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using AgentPaw.Services;
 using AgentPaw.ViewModels;
 
 namespace AgentPaw.Views.Pages;
@@ -44,15 +45,13 @@ public partial class DevAgentPage : UserControl
             Dispatcher.InvokeAsync(ScrollToBottom);
     }
 
-    private void ScrollToBottom()
-    {
-        MessagesScroll.ScrollToEnd();
-    }
+    private void ScrollToBottom() => MessagesScroll.ScrollToEnd();
 
     private void InputBox_KeyDown(object sender, KeyEventArgs e)
     {
-        // Ctrl+Enter 또는 Enter(줄 없을 때) 전송
-        if (e.Key == Key.Enter && !e.KeyboardDevice.IsKeyDown(Key.LeftShift) && !e.KeyboardDevice.IsKeyDown(Key.RightShift))
+        if (e.Key == Key.Enter
+            && !e.KeyboardDevice.IsKeyDown(Key.LeftShift)
+            && !e.KeyboardDevice.IsKeyDown(Key.RightShift))
         {
             e.Handled = true;
             _vm?.SendCommand.Execute(null);
@@ -60,7 +59,17 @@ public partial class DevAgentPage : UserControl
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
+        => _vm?.CancelCommand.Execute(null);
+
+    private void NewProjectItem_Click(object sender, MouseButtonEventArgs e)
+        => _vm?.NewProjectCommand.Execute(null);
+
+    private void ProjectItem_Click(object sender, MouseButtonEventArgs e)
     {
-        _vm?.CancelCommand.Execute(null);
+        if (sender is FrameworkElement fe && fe.Tag is DevProjectRecord record)
+            _vm?.SelectProjectCommand.Execute(record);
     }
+
+    private void RootPath_Click(object sender, MouseButtonEventArgs e)
+        => _vm?.ChangeDevRootCommand.Execute(null);
 }

@@ -1,10 +1,33 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 using AgentPaw.Services;
 
 namespace AgentPaw.ViewModels;
+
+public class DevProjectRecord
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+    public DateTimeOffset LastModified { get; init; }
+
+    public string RelativeTime
+    {
+        get
+        {
+            var diff = DateTimeOffset.Now - LastModified;
+            if (diff.TotalMinutes < 1) return "방금";
+            if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}분 전";
+            if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}시간 전";
+            if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}일 전";
+            return LastModified.ToString("M/d");
+        }
+    }
+}
 
 public partial class DevAgentMessage : ObservableObject
 {
@@ -23,32 +46,129 @@ public partial class DevAgentViewModel : ObservableObject
 
     [ObservableProperty] private string _inputText = "";
     [ObservableProperty] private bool _isRunning;
-    [ObservableProperty] private string _projectName = "";
-    [ObservableProperty] private string _workingDirectory = "";
+
+    // 개발 프로젝트 저장 루트
+    [ObservableProperty] private string _devProjectsRoot = "";
+
+    // 현재 선택된 기존 프로젝트 (null = 새 프로젝트)
+    [ObservableProperty] private DevProjectRecord? _selectedProject;
 
     private CancellationTokenSource? _cts;
     private bool _hasSession;
-    private string _lastProjectDir = "";
 
     public ObservableCollection<DevAgentMessage> Messages { get; } = [];
+    public ObservableCollection<DevProjectRecord> DevProjects { get; } = [];
 
     public DevAgentViewModel(DevAgentService devAgent)
     {
         _devAgent = devAgent;
+        DevProjectsRoot = DevAgentService.LoadSavedRoot();
+        RefreshProjectList();
     }
 
-    public void SetProject(string name, string path)
+    /// <summary>
+    /// MainWindow에서 현재 프로젝트 컨텍스트를 전달할 때 호출된다.
+    /// DevAgent는 독립 저장 폴더를 사용하므로 workspace path는 무시한다.
+    /// </summary>
+    public void SetProject(string name, string workspacePath)
     {
-        ProjectName = name;
-        WorkingDirectory = path;
-
-        // 프로젝트 디렉토리가 바뀌면 세션 초기화
-        if (_lastProjectDir != path)
-        {
-            _hasSession = false;
-            _lastProjectDir = path;
-        }
+        // workspace 경로는 사용하지 않음 — dev projects root만 사용
+        RefreshProjectList();
     }
+
+    // ─────────────────────────────────────────────────────────
+    // 프로젝트 목록
+
+    private void RefreshProjectList()
+    {
+        DevProjects.Clear();
+        if (!Directory.Exists(DevProjectsRoot)) return;
+        var dirs = Directory.GetDirectories(DevProjectsRoot);
+        var records = dirs
+            .Select(dir =>
+            {
+                try
+                {
+                    return new DevProjectRecord
+                    {
+                        Name = System.IO.Path.GetFileName(dir),
+                        Path = dir,
+                        LastModified = new DateTimeOffset(Directory.GetLastWriteTime(dir))
+                    };
+                }
+                catch { return null; }
+            })
+            .Where(r => r != null)
+            .OrderByDescending(r => r!.LastModified)
+            .ToList();
+
+        foreach (var r in records)
+            DevProjects.Add(r!);
+    }
+
+    [RelayCommand]
+    private void SelectProject(DevProjectRecord? project)
+    {
+        if (SelectedProject?.Path == project?.Path) return;
+
+        SelectedProject = project;
+        _hasSession = false;
+        Messages.Clear();
+    }
+
+    [RelayCommand]
+    private void NewProject()
+    {
+        SelectedProject = null;
+        _hasSession = false;
+        Messages.Clear();
+    }
+
+    [RelayCommand]
+    private void OpenInExplorer()
+    {
+        var path = SelectedProject?.Path ?? DevProjectsRoot;
+        if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+        try { Process.Start("explorer.exe", path); } catch { }
+    }
+
+    [RelayCommand]
+    private void OpenInVsCode()
+    {
+        var path = SelectedProject?.Path ?? DevProjectsRoot;
+        if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+        try { Process.Start(new ProcessStartInfo("code", $"\"{path}\"") { UseShellExecute = true }); } catch { }
+    }
+
+    [RelayCommand]
+    private void ChangeDevRoot()
+    {
+        // WPF-native 폴더 선택: SaveFileDialog trick
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "개발 프로젝트 저장 폴더 선택 — 원하는 폴더로 이동 후 저장 클릭",
+            FileName = "여기를 클릭",
+            Filter = "폴더 선택|*.folder",
+            CheckPathExists = false,
+            ValidateNames = false,
+            OverwritePrompt = false,
+            InitialDirectory = DevProjectsRoot
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        var path = System.IO.Path.GetDirectoryName(dialog.FileName) ?? dialog.FileName;
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        DevProjectsRoot = path;
+        DevAgentService.SaveRoot(path);
+        SelectedProject = null;
+        _hasSession = false;
+        Messages.Clear();
+        RefreshProjectList();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 메시지 전송
 
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
@@ -70,22 +190,27 @@ public partial class DevAgentViewModel : ObservableObject
 
         try
         {
-            var dir = string.IsNullOrEmpty(WorkingDirectory)
-                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-                : WorkingDirectory;
+            // 선택된 기존 프로젝트 → 그 디렉토리에서 실행
+            // 새 프로젝트 요청 → 저장 루트에서 실행 (Claude가 하위 폴더 생성)
+            var workDir = SelectedProject?.Path ?? DevProjectsRoot;
+            if (!Directory.Exists(workDir)) Directory.CreateDirectory(workDir);
+
+            // 새 세션이고 선택된 프로젝트가 없으면 컨텍스트 주입
+            var systemContext = (!_hasSession && SelectedProject == null)
+                ? DevAgentService.BuildNewProjectContext(DevProjectsRoot)
+                : null;
 
             var progress = new Progress<DevStreamEvent>(evt =>
                 Application.Current.Dispatcher.Invoke(() => HandleEvent(evt, assistantMsg)));
 
-            await _devAgent.StreamAsync(prompt, dir, _hasSession, progress, _cts.Token);
+            await _devAgent.StreamAsync(prompt, workDir, _hasSession, systemContext, progress, _cts.Token);
             _hasSession = true;
         }
         catch (OperationCanceledException)
         {
-            if (string.IsNullOrEmpty(assistantMsg.Content))
-                assistantMsg.Content = "*[취소됨]*";
-            else
-                assistantMsg.Content += "\n\n*[취소됨]*";
+            assistantMsg.Content = string.IsNullOrEmpty(assistantMsg.Content)
+                ? "*[취소됨]*"
+                : assistantMsg.Content + "\n\n*[취소됨]*";
         }
         catch (Exception ex)
         {
@@ -99,6 +224,13 @@ public partial class DevAgentViewModel : ObservableObject
             _cts = null;
             SendCommand.NotifyCanExecuteChanged();
             CancelCommand.NotifyCanExecuteChanged();
+
+            // 실행 후 프로젝트 목록 갱신 (새 폴더 생성 반영)
+            RefreshProjectList();
+
+            // 새 프로젝트로 생성된 첫 번째 폴더를 자동 선택
+            if (SelectedProject == null && DevProjects.Count > 0)
+                SelectedProject = DevProjects[0];
         }
     }
 
