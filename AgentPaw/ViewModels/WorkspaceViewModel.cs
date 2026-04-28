@@ -20,6 +20,8 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly AuthService _authService;
     private readonly GoogleDocsService _googleDocs;
 
+    private CancellationTokenSource? _cts;
+
     [ObservableProperty]
     private string _projectId = string.Empty;
 
@@ -492,6 +494,7 @@ public partial class WorkspaceViewModel : ObservableObject
         InputMessage = string.Empty;
         Attachments.Clear();
         ErrorMessage = null;
+        _cts = new CancellationTokenSource();
         IsLoading = true;
 
         // 사용자 메시지 표시 — 첨부파일은 파일명 목록만 노출
@@ -579,7 +582,7 @@ public partial class WorkspaceViewModel : ObservableObject
                     Messages.Add(finalized);
             });
 
-            var output = await _orchestrator.RunPipelineAsync(input, progress);
+            var output = await _orchestrator.RunPipelineAsync(input, progress, _cts.Token);
 
             if (output.NeedsConfirmation)
             {
@@ -632,6 +635,15 @@ public partial class WorkspaceViewModel : ObservableObject
                 });
             }
         }
+        catch (OperationCanceledException)
+        {
+            Messages.Add(new ChatMessage
+            {
+                Role = "system",
+                Content = "⏹ 토론이 중단되었습니다.",
+                Timestamp = DateTimeOffset.UtcNow
+            });
+        }
         catch (Exception ex)
         {
             Messages.Add(new ChatMessage
@@ -644,7 +656,22 @@ public partial class WorkspaceViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+            _cts?.Dispose();
+            _cts = null;
         }
+    }
+
+    [RelayCommand]
+    private void CancelDiscussion()
+    {
+        _cts?.Cancel();
+    }
+
+    [RelayCommand]
+    private void CopyMessage(string? content)
+    {
+        if (!string.IsNullOrEmpty(content))
+            System.Windows.Clipboard.SetText(content);
     }
 
     // 전체 대화를 markdown 문자열로 직렬화해 Clipboard로 복사한다.

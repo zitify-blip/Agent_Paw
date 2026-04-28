@@ -49,10 +49,11 @@ public class OrchestratorService
 
     public async Task<OrchestratorOutput> RunPipelineAsync(
         OrchestratorInput input,
-        IProgress<AgentTurn>? progress = null)
+        IProgress<AgentTurn>? progress = null,
+        CancellationToken ct = default)
     {
         if (input.TeamPersonaIds?.Count >= 2)
-            return await RunTeamPipelineAsync(input, progress);
+            return await RunTeamPipelineAsync(input, progress, ct);
 
         var personas = await _configLoader.ListPersonasAsync(input.ProjectId);
         if (personas.Count == 0)
@@ -62,7 +63,7 @@ public class OrchestratorService
         if (input.ForcePersonaId == null
             && personas.Any(p => p.IsPm)
             && personas.Count(p => !p.IsPm) >= 1)
-            return await RunFreeDiscussionPipelineAsync(input, personas, progress);
+            return await RunFreeDiscussionPipelineAsync(input, personas, progress, ct);
 
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var pmPersona = personas.FirstOrDefault(p => p.IsPm);
@@ -176,7 +177,8 @@ public class OrchestratorService
                     streamBuffer.Append(chunk);
                     EmitPreview(force: false);
                 },
-                history: iter == 0 ? input.PriorConversation : null);
+                history: iter == 0 ? input.PriorConversation : null,
+                ct: ct);
 
             var toolParse = ToolCallParser.Parse(response.Content);
             var afterTools = toolParse.CleanedContent;
@@ -507,7 +509,8 @@ public class OrchestratorService
         List<AgentTurn> history,
         IProgress<AgentTurn>? progress,
         string runId,
-        bool isFreeMode = false)
+        bool isFreeMode = false,
+        CancellationToken ct = default)
     {
         var discussionId = Guid.NewGuid().ToString("N")[..8];
         int speakerCounter = 0;
@@ -576,7 +579,8 @@ public class OrchestratorService
                         streamBuffer.Append(chunk);
                         EmitPreview(force: false);
                     },
-                    history: round == 0 ? input.PriorConversation : null);
+                    history: round == 0 ? input.PriorConversation : null,
+                    ct: ct);
 
                 var stance = DiscussionBlockParser.ParseStance(response.Content);
                 var afterStance = stance.CleanedContent;
@@ -749,7 +753,8 @@ public class OrchestratorService
     private async Task<OrchestratorOutput> RunFreeDiscussionPipelineAsync(
         OrchestratorInput input,
         List<Persona> personas,
-        IProgress<AgentTurn>? progress)
+        IProgress<AgentTurn>? progress,
+        CancellationToken ct = default)
     {
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var askUserEnabled = await ResolveAskUserEnabledAsync(input);
@@ -768,7 +773,8 @@ public class OrchestratorService
             participants: speakers,
             rounds: MaxDiscussionRounds,
             history, progress, runId,
-            isFreeMode: true);
+            isFreeMode: true,
+            ct: ct);
 
         // Phase 2: PM 한 번 — 취합만
         var pmConfig = await _configLoader.GetPersonaConfigAsync(pmPersona.PersonaId, input.ProjectId);
@@ -808,7 +814,8 @@ public class OrchestratorService
             pmSystemPrompt, pmUserPrompt,
             pmConfig.Temperature, pmConfig.MaxTokens,
             onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(false); },
-            history: input.PriorConversation);
+            history: input.PriorConversation,
+            ct: ct);
 
         var pmBlock = PmBlockParser.Parse(pmResponse.Content);
         var pmEventId = Guid.NewGuid().ToString();
@@ -921,7 +928,8 @@ public class OrchestratorService
 
     private async Task<OrchestratorOutput> RunTeamPipelineAsync(
         OrchestratorInput input,
-        IProgress<AgentTurn>? progress)
+        IProgress<AgentTurn>? progress,
+        CancellationToken ct = default)
     {
         var allPersonas = await _configLoader.ListPersonasAsync(input.ProjectId);
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
@@ -948,14 +956,15 @@ public class OrchestratorService
                 await RunDiscussionAsync(
                     input, allPersonas, teamPersonas[0], askUserEnabled,
                     topic, string.Empty,
-                    teamPersonas, MaxDiscussionRounds, history, progress, runId);
+                    teamPersonas, MaxDiscussionRounds, history, progress, runId,
+                    ct: ct);
                 break;
             }
             case "chain":
-                await RunChainAsync(input, teamPersonas, workspaceRoot, history, progress, runId);
+                await RunChainAsync(input, teamPersonas, workspaceRoot, history, progress, runId, ct);
                 break;
             default:
-                await RunPanelAsync(input, teamPersonas, workspaceRoot, history, progress, runId);
+                await RunPanelAsync(input, teamPersonas, workspaceRoot, history, progress, runId, ct);
                 break;
         }
 
@@ -985,7 +994,8 @@ public class OrchestratorService
         string workspaceRoot,
         List<AgentTurn> history,
         IProgress<AgentTurn>? progress,
-        string runId)
+        string runId,
+        CancellationToken ct = default)
     {
         for (int i = 0; i < teamPersonas.Count; i++)
         {
@@ -1032,7 +1042,8 @@ public class OrchestratorService
                 systemPrompt, userPrompt,
                 config.Temperature, config.MaxTokens,
                 onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); },
-                history: input.PriorConversation);
+                history: input.PriorConversation,
+                ct: ct);
 
             var eventId = Guid.NewGuid().ToString();
             var wikiParse = WikiSaveParser.Parse(response.Content);
@@ -1067,7 +1078,8 @@ public class OrchestratorService
         string workspaceRoot,
         List<AgentTurn> history,
         IProgress<AgentTurn>? progress,
-        string runId)
+        string runId,
+        CancellationToken ct = default)
     {
         for (int i = 0; i < teamPersonas.Count; i++)
         {
@@ -1115,7 +1127,8 @@ public class OrchestratorService
                 systemPrompt, userPrompt,
                 config.Temperature, config.MaxTokens,
                 onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(force: false); },
-                history: i == 0 ? input.PriorConversation : null);
+                history: i == 0 ? input.PriorConversation : null,
+                ct: ct);
 
             var eventId = Guid.NewGuid().ToString();
             var wikiParse = WikiSaveParser.Parse(response.Content);

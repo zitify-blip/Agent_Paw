@@ -207,24 +207,41 @@
                             <DataTemplate DataType="{x:Type vm:ChatMessage}">
                                 <Grid Margin="0,4">
                                     <!-- User message -->
-                                    <Border HorizontalAlignment="Right"
-                                            MaxWidth="600"
-                                            CornerRadius="12,12,2,12"
-                                            Padding="14,10"
-                                            Margin="80,0,0,0"
-                                            Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=user}">
-                                        <Border.Background>
-                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.12" />
-                                        </Border.Background>
-                                        <Border.BorderBrush>
-                                            <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.35" />
-                                        </Border.BorderBrush>
-                                        <Border.BorderThickness>1</Border.BorderThickness>
-                                        <controls:MarkdownPresenter Markdown="{Binding Content}"
-                                                                    TextForeground="{DynamicResource PawTextPrimary}"
-                                                                    BaseFontSize="15"
-                                                                    FontFamily="{StaticResource PawFont}" />
-                                    </Border>
+                                    <StackPanel HorizontalAlignment="Right"
+                                                MaxWidth="600"
+                                                Margin="80,0,0,0"
+                                                Visibility="{Binding Role, Converter={StaticResource RoleToVisConverter}, ConverterParameter=user}">
+                                        <Border CornerRadius="12,12,2,12"
+                                                Padding="14,10">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.12" />
+                                            </Border.Background>
+                                            <Border.BorderBrush>
+                                                <SolidColorBrush Color="{StaticResource PawPlanningBlueColor}" Opacity="0.35" />
+                                            </Border.BorderBrush>
+                                            <Border.BorderThickness>1</Border.BorderThickness>
+                                            <controls:MarkdownPresenter Markdown="{Binding Content}"
+                                                                        TextForeground="{DynamicResource PawTextPrimary}"
+                                                                        BaseFontSize="15"
+                                                                        FontFamily="{StaticResource PawFont}" />
+                                        </Border>
+                                        <DockPanel Margin="4,2,2,0">
+                                            <ui:Button DockPanel.Dock="Right"
+                                                       Icon="{ui:SymbolIcon Copy16}"
+                                                       Appearance="Transparent"
+                                                       Padding="4,2"
+                                                       ToolTip="클립보드에 복사"
+                                                       Command="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                       CommandParameter="{Binding Content}" />
+                                            <TextBlock Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
+                                                       FontSize="11"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Foreground="{DynamicResource PawTextSecondary}"
+                                                       Opacity="0.6"
+                                                       HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center" />
+                                        </DockPanel>
+                                    </StackPanel>
 
                                     <!-- Assistant message -->
                                     <DockPanel HorizontalAlignment="Left"
@@ -353,6 +370,22 @@
                                                        Foreground="{DynamicResource PawTextSecondary}"
                                                        Opacity="0.5"
                                                        Margin="0,2,0,0" />
+                                            <DockPanel Margin="0,2,0,0">
+                                                <TextBlock Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
+                                                           FontSize="11"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Foreground="{DynamicResource PawTextSecondary}"
+                                                           Opacity="0.6"
+                                                           VerticalAlignment="Center" />
+                                                <ui:Button DockPanel.Dock="Left"
+                                                           Icon="{ui:SymbolIcon Copy16}"
+                                                           Appearance="Transparent"
+                                                           Padding="4,2"
+                                                           Margin="6,0,0,0"
+                                                           ToolTip="클립보드에 복사"
+                                                           Command="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding Content}" />
+                                            </DockPanel>
                                         </StackPanel>
                                     </DockPanel>
 
@@ -455,7 +488,7 @@
                         VerticalAlignment="Bottom"
                         HorizontalAlignment="Left"
                         Margin="24,0,0,8"
-                        Padding="14,8"
+                        Padding="10,6"
                         CornerRadius="8"
                         Background="{DynamicResource PawCardBg}"
                         BorderBrush="{DynamicResource PawBorder}"
@@ -466,7 +499,17 @@
                                          Foreground="{DynamicResource PawGold}" />
                         <TextBlock Text="AI가 응답을 생성하는 중..."
                                    FontSize="14" FontFamily="{StaticResource PawFont}"
-                                   Foreground="{DynamicResource PawTextSecondary}" />
+                                   Foreground="{DynamicResource PawTextSecondary}"
+                                   VerticalAlignment="Center" />
+                        <ui:Button Content="중단"
+                                   Icon="{ui:SymbolIcon Stop24}"
+                                   Appearance="Secondary"
+                                   Padding="8,3"
+                                   Margin="12,0,0,0"
+                                   FontSize="12"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Command="{Binding CancelDiscussionCommand}"
+                                   ToolTip="토론 중단" />
                     </StackPanel>
                 </Border>
 
