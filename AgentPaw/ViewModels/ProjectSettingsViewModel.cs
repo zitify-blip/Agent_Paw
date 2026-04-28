@@ -42,6 +42,7 @@ public partial class ProjectSettingsViewModel : ObservableObject
     private readonly InstructionService _instructionService;
     private readonly PersonaService _personaService;
     private readonly ConfigLoaderService _configLoader;
+    private readonly GitService _gitService;
 
     [ObservableProperty] private string _projectId = string.Empty;
     [ObservableProperty] private string _projectName = string.Empty;
@@ -52,6 +53,12 @@ public partial class ProjectSettingsViewModel : ObservableObject
     [ObservableProperty] private string _workspacePath = string.Empty;
     [ObservableProperty] private string _effectiveWorkspacePath = string.Empty;
     [ObservableProperty] private string? _workspaceSaveMessage;
+
+    // === Git 클론 ===
+    [ObservableProperty] private string _cloneUrl = string.Empty;
+    [ObservableProperty] private string _cloneToken = string.Empty;
+    [ObservableProperty] private string? _cloneMessage;
+    [ObservableProperty] private bool _isCloning;
 
     // 그룹 목록 (그룹별 페르소나 포함)
     public ObservableCollection<PersonaGroupItem> Groups { get; } = [];
@@ -112,12 +119,14 @@ public partial class ProjectSettingsViewModel : ObservableObject
         IDbContextFactory<AgentPawDbContext> dbFactory,
         InstructionService instructionService,
         PersonaService personaService,
-        ConfigLoaderService configLoader)
+        ConfigLoaderService configLoader,
+        GitService gitService)
     {
         _dbFactory = dbFactory;
         _instructionService = instructionService;
         _personaService = personaService;
         _configLoader = configLoader;
+        _gitService = gitService;
     }
 
     /// <summary>빈 문자열이면 null 반환 (DB에 null로 저장)</summary>
@@ -940,6 +949,47 @@ public partial class ProjectSettingsViewModel : ObservableObject
             });
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    // === Git 클론 ===
+
+    [RelayCommand]
+    private async Task CloneRepoAsync()
+    {
+        if (string.IsNullOrEmpty(ProjectId)) return;
+        var url = CloneUrl.Trim();
+        if (string.IsNullOrWhiteSpace(url)) { CloneMessage = "레포 URL을 입력하라."; return; }
+
+        IsCloning = true;
+        CloneMessage = "클론 중…";
+        ErrorMessage = null;
+        try
+        {
+            var targetPath = System.IO.Path.Combine(DefaultWorkspacePath(ProjectId), "repo");
+            var token = string.IsNullOrWhiteSpace(CloneToken) ? null : CloneToken.Trim();
+            var prog = new Progress<string>(msg => CloneMessage = msg);
+
+            await _gitService.CloneAsync(url, targetPath, token, prog);
+
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var project = await db.Projects.FindAsync(ProjectId);
+            if (project != null)
+            {
+                project.GitRepoPath = targetPath;
+                project.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync();
+            }
+
+            WorkspacePath = targetPath;
+            EffectiveWorkspacePath = targetPath;
+            CloneMessage = $"클론 완료 — {targetPath}";
+        }
+        catch (Exception ex)
+        {
+            CloneMessage = null;
+            ErrorMessage = ex.Message;
+        }
+        finally { IsCloning = false; }
     }
 
     public static string DefaultWorkspacePath(string projectId)

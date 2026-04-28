@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 
 namespace AgentPaw.Services;
 
@@ -9,6 +12,15 @@ public class ToolExecutorService
     private const long MaxFileBytes = 5 * 1024 * 1024;
     private const int MaxResultChars = 32_000;
     private const int MaxListEntries = 500;
+
+    private readonly ApiKeyService _apiKeyService;
+    private readonly HttpClient _httpClient;
+
+    public ToolExecutorService(ApiKeyService apiKeyService, IHttpClientFactory httpClientFactory)
+    {
+        _apiKeyService = apiKeyService;
+        _httpClient = httpClientFactory.CreateClient();
+    }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
         string workspaceRoot, string toolName, Dictionary<string, object?> args)
@@ -22,21 +34,22 @@ public class ToolExecutorService
             var rootFull = NormalizeDir(Path.GetFullPath(workspaceRoot));
 
             var lower = toolName.ToLowerInvariant();
-            var writeOps = lower is "write_file" or "append_file" or "edit_file" or "delete_file" or "make_dir";
+            var writeOps = lower is "write_file" or "append_file" or "edit_file" or "delete_file" or "make_dir" or "generate_image";
             if (writeOps && IsUnderTrash(args))
                 return Fail(".trash/ 경로에는 쓰기/삭제가 불가하다 (복구 저장소 보호).");
 
             return lower switch
             {
-                "write_file"   => await WriteFileAsync(rootFull, args),
-                "append_file"  => await AppendFileAsync(rootFull, args),
-                "edit_file"    => await EditFileAsync(rootFull, args),
-                "read_file"    => await ReadFileAsync(rootFull, args),
-                "list_dir"     => ListDir(rootFull, args),
-                "search_files" => SearchFiles(rootFull, args),
-                "delete_file"  => DeleteFile(rootFull, args),
-                "make_dir"     => MakeDir(rootFull, args),
-                "run_command"  => await RunCommandAsync(rootFull, args),
+                "write_file"      => await WriteFileAsync(rootFull, args),
+                "append_file"     => await AppendFileAsync(rootFull, args),
+                "edit_file"       => await EditFileAsync(rootFull, args),
+                "read_file"       => await ReadFileAsync(rootFull, args),
+                "list_dir"        => ListDir(rootFull, args),
+                "search_files"    => SearchFiles(rootFull, args),
+                "delete_file"     => DeleteFile(rootFull, args),
+                "make_dir"        => MakeDir(rootFull, args),
+                "run_command"     => await RunCommandAsync(rootFull, args),
+                "generate_image"  => await GenerateImageAsync(rootFull, args),
                 _ => Fail($"알 수 없는 도구: {toolName}")
             };
         }
@@ -298,6 +311,80 @@ public class ToolExecutorService
                 ? Ok(output)
                 : new ToolExecutionResult { Success = false, Message = output };
         }
+    }
+
+    // generate_image: OpenAI DALL-E 3로 이미지를 생성하여 워크스페이스에 저장.
+    // 설정 > API 키에서 OPENAI 키가 등록되어 있어야 한다.
+    private async Task<ToolExecutionResult> GenerateImageAsync(string root, Dictionary<string, object?> args)
+    {
+        var prompt  = RequireString(args, "prompt");
+        var path    = RequireString(args, "path");
+        var size    = GetString(args, "size")    ?? "1024x1024";
+        var quality = GetString(args, "quality") ?? "standard";
+        var full    = ResolveInside(root, path);
+
+        var validSizes = new[] { "1024x1024", "1792x1024", "1024x1792" };
+        if (!validSizes.Contains(size))
+            return Fail($"size는 {string.Join(", ", validSizes)} 중 하나여야 한다.");
+
+        var apiKey = await _apiKeyService.GetApiKeyAsync("OPENAI");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return Fail("OpenAI API 키가 설정되지 않았다. 설정 > API 키에서 OPENAI 키를 등록한다.");
+
+        // DALL-E 3 이미지 생성 요청
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            model   = "dall-e-3",
+            prompt,
+            n       = 1,
+            size,
+            quality,
+            response_format = "url"
+        });
+
+        var httpReq = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/images/generations")
+        {
+            Content = new StringContent(requestBody, Encoding.UTF8, "application/json")
+        };
+        httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        HttpResponseMessage httpResp;
+        try { httpResp = await _httpClient.SendAsync(httpReq); }
+        catch (Exception ex) { return Fail($"OpenAI 요청 실패: {ex.Message}"); }
+
+        var respBody = await httpResp.Content.ReadAsStringAsync();
+        if (!httpResp.IsSuccessStatusCode)
+            return Fail($"OpenAI API 오류 ({(int)httpResp.StatusCode}): {respBody}");
+
+        // URL 파싱
+        string? imageUrl;
+        string? revisedPrompt;
+        try
+        {
+            using var doc = JsonDocument.Parse(respBody);
+            var dataItem = doc.RootElement.GetProperty("data")[0];
+            imageUrl      = dataItem.GetProperty("url").GetString();
+            revisedPrompt = dataItem.TryGetProperty("revised_prompt", out var rp) ? rp.GetString() : null;
+        }
+        catch (Exception ex) { return Fail($"응답 파싱 실패: {ex.Message}\n{respBody}"); }
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+            return Fail("이미지 URL이 응답에 없다.");
+
+        // 이미지 다운로드
+        byte[] imageBytes;
+        try { imageBytes = await _httpClient.GetByteArrayAsync(imageUrl); }
+        catch (Exception ex) { return Fail($"이미지 다운로드 실패: {ex.Message}"); }
+
+        if (imageBytes.Length > MaxFileBytes)
+            return Fail($"이미지 크기 초과 ({imageBytes.Length} bytes, 최대 {MaxFileBytes})");
+
+        var dir = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        await File.WriteAllBytesAsync(full, imageBytes);
+
+        var note = string.IsNullOrWhiteSpace(revisedPrompt) ? string.Empty : $"\nRevised prompt: {revisedPrompt}";
+        return Ok($"ok — {RelOf(root, full)} 에 {imageBytes.Length} bytes 저장 ({size}, {quality}){note}");
     }
 
     private static int CountOccurrences(string text, string pattern)

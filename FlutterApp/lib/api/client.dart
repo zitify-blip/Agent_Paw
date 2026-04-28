@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config.dart';
 import 'models.dart';
@@ -53,16 +55,50 @@ class ApiClient {
     }
   }
 
-  /// 저장하기 전 로그인 화면에서 특정 URL/token으로 헬스 체크
-  static Future<bool> checkHealthWith(String serverUrl, String devToken) async {
+  /// 로그인 전 연결 검증. 성공 시 null, 실패 시 표시할 에러 메시지 반환.
+  /// Step 1: /m/health (인증 없이) — 서버 도달 여부
+  /// Step 2: /m/me (토큰 포함) — 토큰·UserId 유효성
+  static Future<String?> connectCheck(String serverUrl, String devToken) async {
+    final healthUri = Uri.tryParse('$serverUrl/m/health');
+    if (healthUri == null ||
+        (!healthUri.isScheme('http') && !healthUri.isScheme('https'))) {
+      return '서버 주소 형식이 올바르지 않습니다.\n예) http://192.168.0.2:47893';
+    }
+
+    // ── Step 1: 서버 도달 가능 여부 ─────────────────────────────────
+    try {
+      final res = await http.get(healthUri).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) {
+        return '서버 응답 오류 (HTTP ${res.statusCode})';
+      }
+    } on SocketException {
+      return '서버에 연결할 수 없습니다.\nIP 주소와 포트(47893)를 확인하세요.';
+    } on TimeoutException {
+      return '연결 시간 초과.\n서버가 실행 중인지, IP가 올바른지 확인하세요.';
+    } catch (_) {
+      return '서버에 연결할 수 없습니다.\n주소를 확인하세요.';
+    }
+
+    // ── Step 2: 토큰 + UserId 검증 ──────────────────────────────────
     try {
       final res = await http.get(
-        Uri.parse('$serverUrl/m/health'),
+        Uri.parse('$serverUrl/m/me'),
         headers: {'Authorization': 'Bearer $devToken'},
       ).timeout(const Duration(seconds: 5));
-      return res.statusCode == 200;
+      switch (res.statusCode) {
+        case 200:
+          return null;
+        case 401:
+          return '토큰이 올바르지 않습니다.\nappsettings.json의 MobileApi:DevToken을 확인하세요.';
+        case 404:
+          return '등록된 사용자를 찾을 수 없습니다.\nappsettings.json의 MobileApi:DevUserId를 확인하세요.';
+        default:
+          return '인증 오류 (HTTP ${res.statusCode})';
+      }
+    } on TimeoutException {
+      return '인증 요청 시간 초과.';
     } catch (_) {
-      return false;
+      return '인증 확인 중 오류가 발생했습니다.';
     }
   }
 

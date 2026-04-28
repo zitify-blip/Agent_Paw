@@ -42,7 +42,9 @@ public partial class ProjectSettingsPage : UserControl
         LinkedUngroupedSection.Visibility = _vm.LinkedUngroupedFiles.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         NoLinkedText.Visibility = (_vm.LinkedInstructionGroups.Count == 0 && _vm.LinkedUngroupedFiles.Count == 0)
             ? Visibility.Visible : Visibility.Collapsed;
-        WorkspaceCard.Visibility = string.IsNullOrEmpty(_vm.ProjectId) ? Visibility.Collapsed : Visibility.Visible;
+        var showProjectCards = string.IsNullOrEmpty(_vm.ProjectId) ? Visibility.Collapsed : Visibility.Visible;
+        WorkspaceCard.Visibility = showProjectCards;
+        CloneCard.Visibility = showProjectCards;
 
         if (!string.IsNullOrEmpty(_vm.ErrorMessage))
         {
@@ -166,6 +168,12 @@ public partial class ProjectSettingsPage : UserControl
         if (_vm == null || sender is not FrameworkElement { Tag: AvailableInstructionGroup group }) return;
         await _vm.UnlinkInstructionGroupCommand.ExecuteAsync(group);
         UpdateUI();
+    }
+
+    private void CloneTokenBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (_vm != null && sender is PasswordBox pb)
+            _vm.CloneToken = pb.Password;
     }
 
     private void Page_PreviewKeyDown(object sender, KeyEventArgs e)

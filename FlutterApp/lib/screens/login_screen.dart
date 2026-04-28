@@ -89,13 +89,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() { _connecting = true; _connectError = null; });
 
-    final ok = await ApiClient.checkHealthWith(url, token);
+    final error = await ApiClient.connectCheck(url, token);
     if (!mounted) return;
 
-    if (!ok) {
+    if (error != null) {
       setState(() {
         _connecting   = false;
-        _connectError = '서버에 연결할 수 없습니다. 주소와 토큰을 확인하세요.';
+        _connectError = error;
       });
       return;
     }
@@ -170,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(
                   _connectError!,
                   style: tt.bodySmall?.copyWith(color: cs.error),
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.start,
                 ),
               ],
               const SizedBox(height: 24),

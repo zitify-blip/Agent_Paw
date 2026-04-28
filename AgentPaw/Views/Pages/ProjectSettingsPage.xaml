@@ -102,6 +102,52 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Git Clone -->
+                <Border x:Name="CloneCard" Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Git 레포 클론" FontSize="16" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextPrimary}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="원격 레포를 작업 폴더로 클론한다. 비공개 레포는 Personal Access Token을 입력한다."
+                                   FontSize="11" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}"
+                                   Margin="0,0,0,10" />
+
+                        <TextBlock Text="레포 URL" FontSize="11" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding CloneUrl, UpdateSourceTrigger=PropertyChanged}"
+                                 FontFamily="{StaticResource PawFont}"
+                                 VerticalContentAlignment="Center" Padding="8,6"
+                                 Margin="0,0,0,8"
+                                 IsEnabled="{Binding IsCloning, Converter={StaticResource InverseBoolConverter}}" />
+
+                        <TextBlock Text="Access Token (비공개 레포, 선택)" FontSize="11" FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}" Margin="0,0,0,4" />
+                        <PasswordBox x:Name="CloneTokenBox"
+                                     FontFamily="{StaticResource PawFont}"
+                                     Padding="8,6"
+                                     Margin="0,0,0,12"
+                                     PasswordChanged="CloneTokenBox_PasswordChanged" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <ui:Button Content="클론" Appearance="Primary" Padding="14,4"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Command="{Binding CloneRepoCommand}"
+                                       IsEnabled="{Binding IsCloning, Converter={StaticResource InverseBoolConverter}}" />
+                            <ui:ProgressRing Width="18" Height="18" Margin="10,0,0,0"
+                                             Foreground="{DynamicResource PawGold}"
+                                             VerticalAlignment="Center"
+                                             Visibility="{Binding IsCloning, Converter={StaticResource BoolToVisConverter}}" />
+                            <TextBlock Text="{Binding CloneMessage}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" FontSize="11"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextSecondary}"
+                                       TextWrapping="Wrap" MaxWidth="300" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Personas -->
                 <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
                     <StackPanel>
