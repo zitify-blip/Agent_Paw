@@ -75,4 +75,13 @@ public class WikiService
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
     }
+
+    public async Task DeleteWikiAsync(string wikiId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var wiki = await db.WikiDocuments.FindAsync(wikiId);
+        if (wiki == null) return;
+        db.WikiDocuments.Remove(wiki);
+        await db.SaveChangesAsync();
+    }
 }

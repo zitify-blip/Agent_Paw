@@ -1702,6 +1702,104 @@ public class OrchestratorService
         await db.SaveChangesAsync();
         return lastEventId;
     }
+
+    public async Task<List<WikiDocument>> ConsolidateWikiAsync(string projectId)
+    {
+        // Load last 200 conversation events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var events = await db.EventLogs.AsNoTracking()
+            .Where(e => e.ProjectId == projectId && !e.IsDeleted
+                && (e.EventType == "USER_MESSAGE" || e.EventType == "AI_RESPONSE"
+                    || e.EventType == "PM_RESPONSE" || e.EventType == "PM_REPORT"
+                    || e.EventType == "PM_INTERVENTION"))
+            .OrderBy(e => e.CreatedAt)
+            .Take(200)
+            .ToListAsync();
+
+        if (events.Count == 0) return [];
+
+        // Build conversation transcript
+        var sb = new System.Text.StringBuilder();
+        foreach (var e in events)
+        {
+            var sender = e.EventType == "USER_MESSAGE" ? "User" : "Agent";
+            string content = "";
+            try
+            {
+                using var doc = JsonDocument.Parse(e.Payload);
+                var root = doc.RootElement;
+                content = (root.TryGetProperty("message", out var msg) ? msg.GetString() : null)
+                       ?? (root.TryGetProperty("content", out var cnt) ? cnt.GetString() : null)
+                       ?? (root.TryGetProperty("text", out var txt) ? txt.GetString() : null)
+                       ?? "";
+            }
+            catch { }
+            if (!string.IsNullOrWhiteSpace(content))
+                sb.AppendLine($"[{sender}] {content}");
+        }
+
+        var transcript = sb.ToString();
+
+        // Get a persona model to use (PM persona, or fallback to claude-sonnet-4-6)
+        var personas = await _configLoader.ListPersonasAsync(projectId);
+        var pm = personas.FirstOrDefault(p => p.IsPm) ?? personas.FirstOrDefault();
+        var primaryModel = pm?.PrimaryModel ?? "claude-sonnet-4-6";
+        var fallbackModel = pm?.FallbackModel;
+
+        var systemPrompt = """
+You are a knowledge management specialist. Analyze the conversation transcript below and extract structured knowledge into a wiki knowledge base.
+
+Return ONLY a valid JSON array (no markdown, no explanation) with entries in this format:
+[
+  {
+    "category": "결정사항",
+    "title": "...",
+    "content": "..."
+  }
+]
+
+Use these categories as appropriate:
+- 결정사항: Key decisions made during the conversation
+- 기술명세: Technical specifications, architecture, or design decisions
+- 문제해결: Problems encountered and their solutions
+- 프로세스: Workflows, procedures, or process definitions
+
+The content field should be formatted as Markdown. Be thorough but concise. Only include meaningful knowledge, not small talk or trivial exchanges. Respond in Korean.
+""";
+
+        var response = await _aiClient.ChatWithFallbackAsync(
+            primaryModel,
+            fallbackModel,
+            systemPrompt,
+            $"Conversation transcript:\n\n{transcript}",
+            temperature: 0.3f,
+            maxTokens: 4096
+        );
+
+        // Parse JSON response
+        var created = new List<WikiDocument>();
+        try
+        {
+            var text = response.Content.Trim();
+            // Strip markdown code fences if present
+            if (text.StartsWith("```")) text = text[(text.IndexOf('\n') + 1)..];
+            if (text.EndsWith("```")) text = text[..text.LastIndexOf("```")].TrimEnd();
+
+            using var doc = JsonDocument.Parse(text);
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                var category = item.TryGetProperty("category", out var c) ? c.GetString() ?? "일반" : "일반";
+                var title    = item.TryGetProperty("title",    out var t) ? t.GetString() ?? "" : "";
+                var content  = item.TryGetProperty("content",  out var ct) ? ct.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(title)) continue;
+                var wiki = await _wiki.CreateWikiAsync(projectId, category, title, content);
+                created.Add(wiki);
+            }
+        }
+        catch { }
+
+        return created;
+    }
 }
 
 public class OrchestratorInput

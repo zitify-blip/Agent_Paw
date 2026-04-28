@@ -5,14 +5,14 @@
 [Setup]
 AppId={{C8A7F2B0-1E4D-4F5A-9B3C-2D6F8E1A7C9D}
 AppName=AgentPaw
-AppVersion=0.5.13
-AppVerName=AgentPaw 0.5.13
+AppVersion=0.5.14
+AppVerName=AgentPaw 0.5.14
 AppPublisher=zitify
 AppPublisherURL=https://github.com/zitify-blip/Agent_Paw
 DefaultDirName={autopf}\AgentPaw
 DefaultGroupName=AgentPaw
 OutputDir=installer_output
-OutputBaseFilename=AgentPaw_Setup_v0.5.13
+OutputBaseFilename=AgentPaw_Setup_v0.5.14
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

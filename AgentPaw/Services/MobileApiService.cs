@@ -220,11 +220,25 @@ public class MobileApiService
                     await HandlePatchPersonaModelAsync(stream, req, projectId, segs[4]); return;
                 }
                 if (sub == "timeline" && method == "GET")   { await HandleTimelineAsync(stream, req, projectId); return; }
-                if (sub == "wiki" && method == "GET")
+                if (sub == "wiki")
                 {
                     var wikiId = segs.Length >= 5 ? segs[4] : "";
-                    if (string.IsNullOrEmpty(wikiId)) { await HandleWikiListAsync(stream, projectId); return; }
-                    else { await HandleWikiDetailAsync(stream, projectId, wikiId); return; }
+                    var wikiSub = segs.Length >= 6 ? segs[5] : "";
+
+                    if (string.IsNullOrEmpty(wikiId))
+                    {
+                        if (method == "GET")  { await HandleWikiListAsync(stream, projectId); return; }
+                    }
+                    else if (wikiId == "consolidate" && method == "POST")
+                    {
+                        await HandleWikiConsolidateAsync(stream, projectId); return;
+                    }
+                    else
+                    {
+                        if (method == "GET")    { await HandleWikiDetailAsync(stream, projectId, wikiId); return; }
+                        if (method == "PATCH")  { await HandleWikiUpdateAsync(stream, req, projectId, wikiId); return; }
+                        if (method == "DELETE") { await HandleWikiDeleteAsync(stream, projectId, wikiId); return; }
+                    }
                 }
             }
 
@@ -512,6 +526,52 @@ public class MobileApiService
             createdAt     = wiki.CreatedAt,
             updatedAt     = wiki.UpdatedAt
         });
+    }
+
+    private async Task HandleWikiConsolidateAsync(NetworkStream stream, string projectId)
+    {
+        var created = await _orchestrator.ConsolidateWikiAsync(projectId);
+        await WriteJsonAsync(stream, 200, created.Select(w => new
+        {
+            wikiId   = w.WikiId,
+            category = w.Category,
+            title    = w.Title,
+            version  = w.Version,
+            updatedAt = w.UpdatedAt
+        }));
+    }
+
+    private async Task HandleWikiUpdateAsync(NetworkStream stream, HttpReq req, string projectId, string wikiId)
+    {
+        var text = Encoding.UTF8.GetString(req.Body);
+        using var doc = JsonDocument.Parse(text.Length > 0 ? text : "{}");
+
+        var wiki = await _wikiService.GetWikiAsync(wikiId);
+        if (wiki == null || wiki.ProjectId != projectId) { await WriteJsonAsync(stream, 404, new { error = "Not found" }); return; }
+
+        string? title    = doc.RootElement.TryGetProperty("title",    out var t)  ? t.GetString()  : null;
+        string? content  = doc.RootElement.TryGetProperty("content",  out var c)  ? c.GetString()  : null;
+        string? category = doc.RootElement.TryGetProperty("category", out var ca) ? ca.GetString() : null;
+
+        await _wikiService.UpdateWikiAsync(wikiId, title, content, category);
+        var updated = await _wikiService.GetWikiAsync(wikiId);
+        await WriteJsonAsync(stream, 200, new
+        {
+            wikiId    = updated!.WikiId,
+            category  = updated.Category,
+            title     = updated.Title,
+            content   = updated.Content,
+            version   = updated.Version,
+            updatedAt = updated.UpdatedAt
+        });
+    }
+
+    private async Task HandleWikiDeleteAsync(NetworkStream stream, string projectId, string wikiId)
+    {
+        var wiki = await _wikiService.GetWikiAsync(wikiId);
+        if (wiki == null || wiki.ProjectId != projectId) { await WriteJsonAsync(stream, 404, new { error = "Not found" }); return; }
+        await _wikiService.DeleteWikiAsync(wikiId);
+        await WriteJsonAsync(stream, 200, new { deleted = true });
     }
 
     private async Task HandleTimelineAsync(NetworkStream stream, HttpReq req, string projectId)
