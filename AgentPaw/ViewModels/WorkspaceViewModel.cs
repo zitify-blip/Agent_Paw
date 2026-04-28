@@ -95,6 +95,12 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private bool _isGoogleDocsExporting;
 
+    [ObservableProperty]
+    private bool _isDetailOpen;
+
+    [ObservableProperty]
+    private ChatMessage? _detailMessage;
+
     public WorkspaceViewModel(
         OrchestratorService orchestrator,
         ConfigLoaderService configLoader,
@@ -668,6 +674,20 @@ public partial class WorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ShowMessageDetail(ChatMessage msg)
+    {
+        DetailMessage = msg;
+        IsDetailOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseMessageDetail()
+    {
+        IsDetailOpen = false;
+        DetailMessage = null;
+    }
+
+    [RelayCommand]
     private void CopyMessage(string? content)
     {
         if (!string.IsNullOrEmpty(content))
@@ -1094,6 +1114,42 @@ public partial class ChatMessage : ObservableObject
     // 스트리밍 중 여부 — UI에서 "응답 생성 중..." 표시 및 렌더러 스위칭에 사용
     [ObservableProperty]
     private bool _isStreaming;
+
+    // === 요약 / 상세 보기 ===
+    private const int SummaryThreshold = 300;
+
+    public bool IsLong => (Content?.Length ?? 0) > SummaryThreshold;
+
+    public string SummaryContent
+    {
+        get
+        {
+            if (!IsLong) return Content ?? string.Empty;
+            var text = Content![..SummaryThreshold];
+            var lastBreak = text.LastIndexOfAny(['\n', '.', ' ']);
+            return (lastBreak > 200 ? text[..lastBreak] : text) + "…";
+        }
+    }
+
+    // 스트리밍 완료 + 짧은 내용 → 전체 마크다운
+    public bool ShowMarkdown => !IsStreaming && !IsLong;
+
+    // 스트리밍 완료 + 긴 내용 → 요약 텍스트 + 상세히 보기 버튼
+    public bool ShowSummaryText => !IsStreaming && IsLong;
+
+    partial void OnContentChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsLong));
+        OnPropertyChanged(nameof(SummaryContent));
+        OnPropertyChanged(nameof(ShowMarkdown));
+        OnPropertyChanged(nameof(ShowSummaryText));
+    }
+
+    partial void OnIsStreamingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowMarkdown));
+        OnPropertyChanged(nameof(ShowSummaryText));
+    }
 }
 
 public class ChatAttachment

@@ -333,12 +333,30 @@
                                                                FontFamily="{StaticResource PawFont}"
                                                                Foreground="{DynamicResource PawTextPrimary}"
                                                                Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}" />
-                                                    <!-- 스트리밍 종료 후 마크다운 렌더로 치환 -->
+                                                    <!-- 스트리밍 종료 + 짧은 내용: 전체 마크다운 렌더 -->
                                                     <controls:MarkdownPresenter Markdown="{Binding Content}"
                                                                                 TextForeground="{DynamicResource PawTextPrimary}"
                                                                                 BaseFontSize="15"
                                                                                 FontFamily="{StaticResource PawFont}"
-                                                                                Visibility="{Binding IsStreaming, Converter={StaticResource InverseBoolToVisConverter}, FallbackValue=Visible}" />
+                                                                                Visibility="{Binding ShowMarkdown, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}" />
+                                                    <!-- 스트리밍 종료 + 긴 내용: 요약 텍스트 -->
+                                                    <TextBlock Text="{Binding SummaryContent}"
+                                                               TextWrapping="Wrap"
+                                                               FontSize="15"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Foreground="{DynamicResource PawTextPrimary}"
+                                                               Visibility="{Binding ShowSummaryText, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}" />
+                                                    <!-- 상세히 보기 버튼 -->
+                                                    <ui:Button Content="상세히 보기"
+                                                               Icon="{ui:SymbolIcon Open24}"
+                                                               Appearance="Secondary"
+                                                               Padding="8,3"
+                                                               Margin="0,6,0,0"
+                                                               FontSize="12"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Tag="{Binding}"
+                                                               Click="ShowDetail_Click"
+                                                               Visibility="{Binding ShowSummaryText, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}" />
                                                 </StackPanel>
                                             </Border>
                                             <!-- Handoff step indicator — 다음 에이전트 호출 -->
@@ -827,6 +845,67 @@
 
             <!-- API Settings Tab -->
             <ContentControl x:Name="ApiSettingsHost" Visibility="Collapsed" />
+        </Grid>
+
+        <!-- 상세 보기 오버레이 팝업 -->
+        <Grid Grid.RowSpan="3"
+              Panel.ZIndex="100"
+              Background="#CC000000"
+              Visibility="{Binding IsDetailOpen, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+            <Border MaxWidth="760"
+                    MaxHeight="700"
+                    CornerRadius="12"
+                    Background="{DynamicResource PawCardBg}"
+                    BorderBrush="{DynamicResource PawBorder}"
+                    BorderThickness="1"
+                    Margin="32"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Padding="24">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <!-- 헤더: 페르소나 라벨 + 시간 -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock DockPanel.Dock="Left"
+                                   Text="{Binding DetailMessage.PersonaLabel}"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextPrimary}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Left"
+                                   Margin="12,0,0,0"
+                                   Text="{Binding DetailMessage.Timestamp, StringFormat={}{0:HH:mm}}"
+                                   FontSize="12"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextSecondary}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                    <!-- 전문 스크롤 -->
+                    <ScrollViewer Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  MaxHeight="540">
+                        <controls:MarkdownPresenter Markdown="{Binding DetailMessage.Content}"
+                                                   TextForeground="{DynamicResource PawTextPrimary}"
+                                                   BaseFontSize="15"
+                                                   FontFamily="{StaticResource PawFont}" />
+                    </ScrollViewer>
+                    <!-- 닫기 버튼 -->
+                    <ui:Button Grid.Row="2"
+                               Content="닫기"
+                               Icon="{ui:SymbolIcon Dismiss24}"
+                               Appearance="Secondary"
+                               Padding="12,6"
+                               Margin="0,12,0,0"
+                               FontFamily="{StaticResource PawFont}"
+                               HorizontalAlignment="Right"
+                               Click="CloseDetail_Click" />
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

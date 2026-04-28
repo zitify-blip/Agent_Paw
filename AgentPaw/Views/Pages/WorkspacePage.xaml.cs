@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using AgentPaw.Models;
 using AgentPaw.ViewModels;
 using Microsoft.Win32;
 
@@ -310,5 +311,17 @@ public partial class WorkspacePage : UserControl
         ApiSettingsTabBtn.Appearance = active == "api_settings"
             ? Wpf.Ui.Controls.ControlAppearance.Primary
             : Wpf.Ui.Controls.ControlAppearance.Secondary;
+    }
+
+    private void ShowDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.Tag is ChatMessage msg && DataContext is WorkspaceViewModel vm)
+            vm.ShowMessageDetailCommand.Execute(msg);
+    }
+
+    private void CloseDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WorkspaceViewModel vm)
+            vm.CloseMessageDetailCommand.Execute(null);
     }
 }
