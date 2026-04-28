@@ -31,6 +31,8 @@ public class AuthService
     public string? CurrentUserId { get; private set; }
     public string? CurrentTokenId { get; private set; }
 
+    public bool IsDevBypassEnabled { get; }
+
     public AuthService(
         IDbContextFactory<AgentPawDbContext> dbFactory,
         EncryptionService encryption,
@@ -43,6 +45,7 @@ public class AuthService
         _clientId = configuration["Google:ClientId"] ?? string.Empty;
         _clientSecret = configuration["Google:ClientSecret"] ?? string.Empty;
         _redirectUri = configuration["Google:RedirectUri"] ?? "http://localhost:47891/auth/callback";
+        IsDevBypassEnabled = configuration.GetValue<bool>("DevBypass");
     }
 
     public string GetLoginUrl()
@@ -363,7 +366,6 @@ public class AuthService
             File.Delete(sessionPath);
     }
 
-#if DEBUG || DEVBYPASS
     public async Task<(string Token, User User)> DevBypassLoginAsync()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -431,7 +433,6 @@ public class AuthService
 
         return (jwt, user);
     }
-#endif // DEBUG || DEVBYPASS
 
     // --- Private helpers ---
 

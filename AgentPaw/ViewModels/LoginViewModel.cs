@@ -178,8 +178,7 @@ public partial class LoginViewModel : ObservableObject
         }
     }
 
-#if DEBUG || DEVBYPASS
-    public bool IsDevBypassAvailable => true;
+    public bool IsDevBypassAvailable => _authService.IsDevBypassEnabled;
 
     [RelayCommand]
     private async Task DevBypassLoginAsync()
@@ -210,7 +209,6 @@ public partial class LoginViewModel : ObservableObject
             IsLoading = false;
         }
     }
-#endif // DEBUG || DEVBYPASS
 
     [RelayCommand]
     private void CancelLogin()
