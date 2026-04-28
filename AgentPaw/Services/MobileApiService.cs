@@ -36,7 +36,7 @@ public class MobileApiService
     {
         ["Access-Control-Allow-Origin"] = "*",
         ["Access-Control-Allow-Headers"] = "Authorization, Content-Type",
-        ["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        ["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     };
 
     public MobileApiService(
@@ -210,8 +210,9 @@ public class MobileApiService
                 var projectId = segs[2];
                 var sub = segs.Length >= 4 ? segs[3] : "";
 
-                if (sub == "" && method == "GET")           { await HandleGetProjectAsync(stream, projectId); return; }
-                if (sub == "messages" && method == "GET")   { await HandleMessagesAsync(stream, req, projectId); return; }
+                if (sub == "" && method == "GET")              { await HandleGetProjectAsync(stream, projectId); return; }
+                if (sub == "settings" && method == "PATCH")  { await HandlePatchProjectSettingsAsync(stream, req, projectId); return; }
+                if (sub == "messages" && method == "GET")    { await HandleMessagesAsync(stream, req, projectId); return; }
                 if (sub == "chat" && method == "POST")      { await HandleChatAsync(stream, req, projectId); return; }
                 if (sub == "personas" && method == "GET")   { await HandlePersonasAsync(stream, projectId); return; }
                 if (sub == "timeline" && method == "GET")   { await HandleTimelineAsync(stream, req, projectId); return; }
@@ -290,10 +291,45 @@ public class MobileApiService
             description = project.Description,
             gitRepoPath = project.GitRepoPath,
             askUserEnabled = project.AskUserEnabled,
+            maxDiscussionRounds = project.MaxDiscussionRounds,
+            maxDiscussionParticipants = project.MaxDiscussionParticipants,
             googleDocId = project.GoogleDocId,
             status = project.Status,
             createdAt = project.CreatedAt,
             updatedAt = project.UpdatedAt
+        });
+    }
+
+    private async Task HandlePatchProjectSettingsAsync(NetworkStream stream, HttpReq req, string projectId)
+    {
+        var text = Encoding.UTF8.GetString(req.Body);
+        using var doc = JsonDocument.Parse(text.Length > 0 ? text : "{}");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var project = await db.Projects.FindAsync(projectId);
+        if (project == null) { await WriteJsonAsync(stream, 404, new { error = "Project not found" }); return; }
+
+        if (doc.RootElement.TryGetProperty("askUserEnabled", out var a)
+            && (a.ValueKind == JsonValueKind.True || a.ValueKind == JsonValueKind.False))
+            project.AskUserEnabled = a.GetBoolean();
+
+        if (doc.RootElement.TryGetProperty("maxDiscussionRounds", out var r)
+            && r.ValueKind == JsonValueKind.Number)
+            project.MaxDiscussionRounds = Math.Clamp(r.GetInt32(), 1, 50);
+
+        if (doc.RootElement.TryGetProperty("maxDiscussionParticipants", out var p)
+            && p.ValueKind == JsonValueKind.Number)
+            project.MaxDiscussionParticipants = Math.Clamp(p.GetInt32(), 2, 10);
+
+        project.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        await WriteJsonAsync(stream, 200, new
+        {
+            projectId                = project.ProjectId,
+            askUserEnabled           = project.AskUserEnabled,
+            maxDiscussionRounds      = project.MaxDiscussionRounds,
+            maxDiscussionParticipants = project.MaxDiscussionParticipants
         });
     }
 
@@ -352,8 +388,8 @@ public class MobileApiService
             Message        = message,
             ForcePersonaId = forcePersonaId,
             TeamPersonaIds = teamIds?.Count >= 2 ? teamIds : null,
-            TeamMode       = teamMode ?? "panel",
-            AskUserEnabled = false
+            TeamMode       = teamMode ?? "panel"
+            // AskUserEnabled 미지정 → OrchestratorService가 프로젝트 설정에서 읽음
         };
 
         var progress = new Progress<AgentTurn>(turn =>

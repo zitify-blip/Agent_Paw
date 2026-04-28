@@ -24,6 +24,9 @@ class Project {
   final String projectName;
   final String? description;
   final String? status;
+  final bool askUserEnabled;
+  final int maxDiscussionRounds;
+  final int maxDiscussionParticipants;
   final DateTime? createdAt;
 
   const Project({
@@ -31,6 +34,9 @@ class Project {
     required this.projectName,
     this.description,
     this.status,
+    this.askUserEnabled = true,
+    this.maxDiscussionRounds = 10,
+    this.maxDiscussionParticipants = 4,
     this.createdAt,
   });
 
@@ -39,6 +45,9 @@ class Project {
         projectName: json['projectName'] as String,
         description: json['description'] as String?,
         status: json['status'] as String?,
+        askUserEnabled: json['askUserEnabled'] as bool? ?? true,
+        maxDiscussionRounds: json['maxDiscussionRounds'] as int? ?? 10,
+        maxDiscussionParticipants: json['maxDiscussionParticipants'] as int? ?? 4,
         createdAt: json['createdAt'] != null
             ? DateTime.tryParse(json['createdAt'] as String)
             : null,

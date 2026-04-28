@@ -44,6 +44,19 @@ class ApiClient {
     return body;
   }
 
+  static Future<dynamic> _patch(String path, Map<String, dynamic> data) async {
+    final res = await http.patch(
+      Uri.parse(_url(path)),
+      headers: _headers,
+      body: jsonEncode(data),
+    );
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, body['error'] as String? ?? 'Error');
+    }
+    return body;
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final res = await http
@@ -112,6 +125,27 @@ class ApiClient {
     return (json as List<dynamic>)
         .map((e) => Project.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  static Future<Project> getProject(String projectId) async {
+    final json = await _get('/m/projects/$projectId');
+    return Project.fromJson(json as Map<String, dynamic>);
+  }
+
+  static Future<Project> updateProjectSettings(
+    String projectId, {
+    bool? askUserEnabled,
+    int? maxDiscussionRounds,
+    int? maxDiscussionParticipants,
+  }) async {
+    final json = await _patch('/m/projects/$projectId/settings', {
+      if (askUserEnabled != null) 'askUserEnabled': askUserEnabled,
+      if (maxDiscussionRounds != null) 'maxDiscussionRounds': maxDiscussionRounds,
+      if (maxDiscussionParticipants != null)
+        'maxDiscussionParticipants': maxDiscussionParticipants,
+    });
+    // 서버는 변경된 필드만 반환하므로 기존 projectId 기준으로 재조회
+    return getProject(projectId);
   }
 
   static Future<Project> createProject(String name, {String? description}) async {

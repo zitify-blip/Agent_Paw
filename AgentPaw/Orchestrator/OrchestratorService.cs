@@ -22,8 +22,9 @@ public class OrchestratorService
 
     private const int MaxIterations = 24;
     private const int MaxHandoffs = 12;
-    private const int MaxDiscussionRounds = 10;
-    private const int MaxDiscussionParticipants = 4;
+    // 토론 설정 기본값 — 프로젝트별 설정이 없을 때 폴백
+    private const int DefaultMaxDiscussionRounds = 10;
+    private const int DefaultMaxDiscussionParticipants = 4;
 
     public OrchestratorService(
         IDbContextFactory<AgentPawDbContext> dbFactory,
@@ -68,6 +69,7 @@ public class OrchestratorService
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var pmPersona = personas.FirstOrDefault(p => p.IsPm);
         var askUserEnabled = await ResolveAskUserEnabledAsync(input);
+        var (maxDiscussionRounds, maxDiscussionParticipants) = await ResolveDiscussionSettingsAsync(input.ProjectId);
         var runId = Guid.NewGuid().ToString("N")[..8];
 
         var classification = _classifier.Classify(input.Message, personas, input.ForcePersonaId);
@@ -107,7 +109,7 @@ public class OrchestratorService
             var config = await _configLoader.GetPersonaConfigAsync(currentPersonaId, input.ProjectId);
             var isCurrentPm = pmPersona != null && config.PersonaId == pmPersona.PersonaId;
 
-            var addendum = BuildProtocolAddendum(personas, config.Name, workspaceRoot, isCurrentPm, pmPersona, askUserEnabled);
+            var addendum = BuildProtocolAddendum(personas, config.Name, workspaceRoot, isCurrentPm, pmPersona, askUserEnabled, maxDiscussionRounds, maxDiscussionParticipants);
             var systemPrompt = string.IsNullOrWhiteSpace(addendum)
                 ? config.SystemPrompt
                 : config.SystemPrompt + "\n\n" + addendum;
@@ -354,14 +356,15 @@ public class OrchestratorService
             // PM이 다자 토론을 개시했으면 인라인으로 실행하고 전사를 PM 다음 턴의 입력으로 넘긴다
             if (pmOpeningDiscussion && discussionOpen != null && pmPersona != null)
             {
-                var validated = ValidateDiscussionParticipants(discussionOpen.Participants, personas, pmPersona);
+                var validated = ValidateDiscussionParticipants(discussionOpen.Participants, personas, pmPersona, maxDiscussionParticipants);
                 if (validated.Count >= 2)
                 {
-                    var rounds = Math.Clamp(discussionOpen.Rounds, 1, MaxDiscussionRounds);
+                    var rounds = Math.Clamp(discussionOpen.Rounds, 1, maxDiscussionRounds);
                     var transcript = await RunDiscussionAsync(
                         input, personas, pmPersona, askUserEnabled,
                         discussionOpen.Topic, discussionOpen.StanceHint,
-                        validated, rounds, history, progress, runId);
+                        validated, rounds, history, progress, runId,
+                        maxParticipants: maxDiscussionParticipants);
                     pendingDiscussionFeedback = transcript;
                     currentPersonaId = pmPersona.PersonaId;
                     fromPersonaLabel = "다자 토론";
@@ -476,8 +479,9 @@ public class OrchestratorService
 
     // === 다자 토론(round-table) ===
 
-    private List<Persona> ValidateDiscussionParticipants(
-        List<string> names, List<Persona> allPersonas, Persona pm)
+    private static List<Persona> ValidateDiscussionParticipants(
+        List<string> names, List<Persona> allPersonas, Persona pm,
+        int maxParticipants = DefaultMaxDiscussionParticipants)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<Persona>();
@@ -492,7 +496,7 @@ public class OrchestratorService
             if (match.PersonaId == pm.PersonaId) continue;  // PM은 참여자에서 제외
             if (!seen.Add(match.PersonaId)) continue;
             result.Add(match);
-            if (result.Count >= MaxDiscussionParticipants) break;
+            if (result.Count >= maxParticipants) break;
         }
         return result;
     }
@@ -509,13 +513,14 @@ public class OrchestratorService
         List<AgentTurn> history,
         IProgress<AgentTurn>? progress,
         string runId,
+        int maxParticipants = DefaultMaxDiscussionParticipants,
         bool isFreeMode = false,
         CancellationToken ct = default)
     {
         var discussionId = Guid.NewGuid().ToString("N")[..8];
         int speakerCounter = 0;
         // 합의(전원 agree)가 주 종료 조건. maxTurns는 무한 루프 방지 안전 캡.
-        int maxTurns = MaxDiscussionRounds * MaxDiscussionParticipants * 3;
+        int maxTurns = rounds * maxParticipants * 3;
 
         // 각 참여자가 마지막으로 발언한 턴 인덱스 (-1 = 미발언)
         var lastSpoke = participants.ToDictionary(p => p.PersonaId, _ => -1);
@@ -777,6 +782,7 @@ public class OrchestratorService
     {
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var askUserEnabled = await ResolveAskUserEnabledAsync(input);
+        var (maxDiscussionRounds, maxDiscussionParticipants) = await ResolveDiscussionSettingsAsync(input.ProjectId);
         var runId = Guid.NewGuid().ToString("N")[..8];
 
         var pmPersona = personas.First(p => p.IsPm);
@@ -790,8 +796,9 @@ public class OrchestratorService
             topic: input.Message,
             stanceHint: string.Empty,
             participants: speakers,
-            rounds: MaxDiscussionRounds,
+            rounds: maxDiscussionRounds,
             history, progress, runId,
+            maxParticipants: maxDiscussionParticipants,
             isFreeMode: true,
             ct: ct);
 
@@ -972,10 +979,12 @@ public class OrchestratorService
             case "debate":
             {
                 var topic = input.Message.Length > 120 ? input.Message[..120] + "…" : input.Message;
+                var (dMaxRounds, dMaxParticipants) = await ResolveDiscussionSettingsAsync(input.ProjectId);
                 await RunDiscussionAsync(
                     input, allPersonas, teamPersonas[0], askUserEnabled,
                     topic, string.Empty,
-                    teamPersonas, MaxDiscussionRounds, history, progress, runId,
+                    teamPersonas, dMaxRounds, history, progress, runId,
+                    maxParticipants: dMaxParticipants,
                     ct: ct);
                 break;
             }
@@ -1339,13 +1348,25 @@ public class OrchestratorService
         return project?.AskUserEnabled ?? true;
     }
 
+    private async Task<(int maxRounds, int maxParticipants)> ResolveDiscussionSettingsAsync(string projectId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var project = await db.Projects.FindAsync(projectId);
+        return (
+            project?.MaxDiscussionRounds       ?? DefaultMaxDiscussionRounds,
+            project?.MaxDiscussionParticipants ?? DefaultMaxDiscussionParticipants
+        );
+    }
+
     private static string BuildProtocolAddendum(
         List<Persona> personas,
         string currentPersonaName,
         string workspaceRoot,
         bool isCurrentPm,
         Persona? pmPersona,
-        bool askUserEnabled)
+        bool askUserEnabled,
+        int maxRounds = DefaultMaxDiscussionRounds,
+        int maxParticipants = DefaultMaxDiscussionParticipants)
     {
         var sb = new StringBuilder();
 
@@ -1406,7 +1427,7 @@ public class OrchestratorService
             sb.AppendLine("{\"to\": \"<페르소나 name>\", \"request\": \"<자기충족적 요청>\"}");
             sb.AppendLine("```");
             sb.AppendLine();
-            sb.AppendLine($"다자 토론 개시 형식 (discussion) — 참여자 2~{MaxDiscussionParticipants}명, rounds 1~{MaxDiscussionRounds}:");
+            sb.AppendLine($"다자 토론 개시 형식 (discussion) — 참여자 2~{maxParticipants}명, rounds 1~{maxRounds}:");
             sb.AppendLine("```discussion");
             sb.AppendLine("{\"topic\": \"<토론 주제 1~2문장>\", \"participants\": [\"<name1>\",\"<name2>\"], \"rounds\": 2, \"stance_hint\": \"<각자 어떤 관점으로 발언할지 힌트>\"}");
             sb.AppendLine("```");

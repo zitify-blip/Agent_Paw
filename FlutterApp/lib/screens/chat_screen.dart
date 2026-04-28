@@ -3,6 +3,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../widgets/message_bubble.dart';
 import 'personas_screen.dart';
+import 'project_settings_screen.dart';
 import 'wiki_list_screen.dart';
 import 'timeline_screen.dart';
 
@@ -23,11 +24,66 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sending = false;
   String? _error;
   String? _oldestEventId;
+  List<Persona> _personas = [];
+  Persona? _selectedPersona;
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _loadPersonas();
+  }
+
+  Future<void> _loadPersonas() async {
+    try {
+      final personas = await ApiClient.getPersonas(widget.project.projectId);
+      if (mounted) setState(() => _personas = personas);
+    } catch (_) {}
+  }
+
+  Future<void> _showPersonaPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                '에이전트 선택',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.auto_awesome)),
+              title: const Text('자동 (기본)'),
+              selected: _selectedPersona == null,
+              onTap: () {
+                setState(() => _selectedPersona = null);
+                Navigator.pop(ctx);
+              },
+            ),
+            ..._personas.map((p) => ListTile(
+                  leading: CircleAvatar(
+                    child: Text(
+                      (p.label ?? p.name).substring(0, 1).toUpperCase(),
+                    ),
+                  ),
+                  title: Text(p.label ?? p.name),
+                  subtitle: p.description != null ? Text(p.description!) : null,
+                  selected: _selectedPersona?.personaId == p.personaId,
+                  onTap: () {
+                    setState(() => _selectedPersona = p);
+                    Navigator.pop(ctx);
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -96,7 +152,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final response = await ApiClient.sendMessage(
-          widget.project.projectId, text);
+          widget.project.projectId, text,
+          forcePersonaId: _selectedPersona?.personaId);
 
       if (!mounted) return;
 
@@ -185,12 +242,21 @@ class _ChatScreenState extends State<ChatScreen> {
                         builder: (_) => TimelineScreen(
                             projectId: widget.project.projectId)),
                   );
+                case 'settings':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => ProjectSettingsScreen(
+                            project: widget.project)),
+                  );
               }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'personas', child: Text('페르소나')),
               PopupMenuItem(value: 'wiki', child: Text('위키')),
               PopupMenuItem(value: 'timeline', child: Text('타임라인')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'settings', child: Text('프로젝트 설정')),
             ],
           ),
         ],
@@ -251,38 +317,69 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _messageCtrl,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: TextInputAction.newline,
-              decoration: const InputDecoration(
-                hintText: '메시지 입력...',
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          if (_selectedPersona != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Chip(
+                avatar: const Icon(Icons.person, size: 16),
+                label: Text(
+                  _selectedPersona!.label ?? _selectedPersona!.name,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                deleteIcon: const Icon(Icons.close, size: 14),
+                onDeleted: () => setState(() => _selectedPersona = null),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
               ),
-              onSubmitted: (_) => _send(),
             ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: _sending ? null : _send,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(48, 48),
-              padding: EdgeInsets.zero,
-            ),
-            child: _sending
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: Icon(
+                  Icons.person_search,
+                  color: _selectedPersona != null
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
+                tooltip: '에이전트 선택',
+                onPressed: _personas.isEmpty ? null : _showPersonaPicker,
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _messageCtrl,
+                  minLines: 1,
+                  maxLines: 5,
+                  textInputAction: TextInputAction.newline,
+                  decoration: const InputDecoration(
+                    hintText: '메시지 입력...',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  onSubmitted: (_) => _send(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _sending ? null : _send,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  padding: EdgeInsets.zero,
+                ),
+                child: _sending
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+              ),
+            ],
           ),
         ],
       ),
