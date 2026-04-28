@@ -58,6 +58,12 @@ public class OrchestratorService
         if (personas.Count == 0)
             throw new InvalidOperationException("프로젝트에 페르소나가 없습니다.");
 
+        // 멀티에이전트: PM + 비PM이 1명 이상이면 자유 토론 모드 (ForcePersonaId 지정 시 단일 에이전트 유지)
+        if (input.ForcePersonaId == null
+            && personas.Any(p => p.IsPm)
+            && personas.Count(p => !p.IsPm) >= 1)
+            return await RunFreeDiscussionPipelineAsync(input, personas, progress);
+
         var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
         var pmPersona = personas.FirstOrDefault(p => p.IsPm);
         var askUserEnabled = await ResolveAskUserEnabledAsync(input);
@@ -500,7 +506,8 @@ public class OrchestratorService
         int rounds,
         List<AgentTurn> history,
         IProgress<AgentTurn>? progress,
-        string runId)
+        string runId,
+        bool isFreeMode = false)
     {
         var discussionId = Guid.NewGuid().ToString("N")[..8];
         int speakerCounter = 0;
@@ -514,7 +521,7 @@ public class OrchestratorService
                 var speaker = participants[si];
                 var config = await _configLoader.GetPersonaConfigAsync(speaker.PersonaId, input.ProjectId);
                 var addendum = BuildDiscussionSpeakerAddendum(
-                    topic, stanceHint, participants, config.Name, round, rounds);
+                    topic, stanceHint, participants, config.Name, round, rounds, isFreeMode);
                 var systemPrompt = string.IsNullOrWhiteSpace(addendum)
                     ? config.SystemPrompt
                     : config.SystemPrompt + "\n\n" + addendum;
@@ -629,11 +636,13 @@ public class OrchestratorService
 
     private static string BuildDiscussionSpeakerAddendum(
         string topic, string stanceHint, List<Persona> participants,
-        string currentName, int round, int totalRounds)
+        string currentName, int round, int totalRounds, bool isFreeMode = false)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("[다자 토론 모드 — 너는 라운드 테이블 참여자다]");
-        sb.AppendLine($"토론 주제: {topic}");
+        sb.AppendLine(isFreeMode
+            ? "[자유 토론 모드 — 너는 팀원이다. 사용자 요청에 직접 응답하면서 동료 발언에도 반응하라]"
+            : "[다자 토론 모드 — 너는 라운드 테이블 참여자다]");
+        sb.AppendLine(isFreeMode ? $"사용자 요청: {topic}" : $"토론 주제: {topic}");
         if (!string.IsNullOrWhiteSpace(stanceHint))
             sb.AppendLine($"PM의 발언 가이드: {stanceHint}");
         sb.AppendLine($"진행 상황: 라운드 {round + 1}/{totalRounds}");
@@ -733,6 +742,179 @@ public class OrchestratorService
             sb.AppendLine();
         }
         return sb.ToString().TrimEnd();
+    }
+
+    // === 자유 토론 파이프라인 (PM + 비PM 혼합 프로젝트 기본 동작) ===
+
+    private async Task<OrchestratorOutput> RunFreeDiscussionPipelineAsync(
+        OrchestratorInput input,
+        List<Persona> personas,
+        IProgress<AgentTurn>? progress)
+    {
+        var workspaceRoot = await ResolveWorkspaceRootAsync(input.ProjectId);
+        var askUserEnabled = await ResolveAskUserEnabledAsync(input);
+        var runId = Guid.NewGuid().ToString("N")[..8];
+
+        var pmPersona = personas.First(p => p.IsPm);
+        var speakers = personas.Where(p => !p.IsPm).ToList();
+
+        var history = new List<AgentTurn>();
+
+        // Phase 1: 비PM 팀원들이 자유 토론
+        var transcript = await RunDiscussionAsync(
+            input, personas, pmPersona, askUserEnabled,
+            topic: input.Message,
+            stanceHint: string.Empty,
+            participants: speakers,
+            rounds: MaxDiscussionRounds,
+            history, progress, runId,
+            isFreeMode: true);
+
+        // Phase 2: PM 한 번 — 취합만
+        var pmConfig = await _configLoader.GetPersonaConfigAsync(pmPersona.PersonaId, input.ProjectId);
+        var pmSystemPrompt = pmConfig.SystemPrompt + "\n\n" + BuildPmAggregateAddendum();
+        var pmUserPrompt = BuildPmAggregatePrompt(input.Message, transcript);
+
+        var streamKey = $"{runId}-pm-agg";
+        var streamBuffer = new StringBuilder();
+        var lastEmitTicks = 0L;
+        const long EmitIntervalTicks = TimeSpan.TicksPerMillisecond * 33;
+
+        void EmitPreview(bool force)
+        {
+            if (progress == null) return;
+            var nowTicks = DateTime.UtcNow.Ticks;
+            if (!force && nowTicks - lastEmitTicks < EmitIntervalTicks) return;
+            lastEmitTicks = nowTicks;
+            progress.Report(new AgentTurn
+            {
+                TurnIndex = history.Count,
+                PersonaId = pmConfig.PersonaId,
+                PersonaName = pmConfig.Name,
+                PersonaLabel = pmConfig.Label,
+                PersonaAvatar = pmConfig.Avatar,
+                IsPm = true,
+                Content = CleanStreamingPreview(streamBuffer.ToString()),
+                ModelUsed = string.Empty,
+                StreamKey = streamKey,
+                IsStreamingPreview = true
+            });
+        }
+
+        EmitPreview(force: true);
+
+        var pmResponse = await _aiClient.ChatWithFallbackStreamAsync(
+            pmConfig.PrimaryModel, pmConfig.FallbackModel,
+            pmSystemPrompt, pmUserPrompt,
+            pmConfig.Temperature, pmConfig.MaxTokens,
+            onDelta: chunk => { streamBuffer.Append(chunk); EmitPreview(false); },
+            history: input.PriorConversation);
+
+        var pmBlock = PmBlockParser.Parse(pmResponse.Content);
+        var pmEventId = Guid.NewGuid().ToString();
+        var wikiParse = WikiSaveParser.Parse(pmBlock.CleanedContent);
+        var pmContent = wikiParse.CleanedContent;
+        if (string.IsNullOrWhiteSpace(pmContent)) pmContent = "(응답 없음)";
+
+        foreach (var block in wikiParse.Saves)
+        {
+            try { await _wiki.CreateWikiAsync(input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: pmEventId); }
+            catch (Exception ex) { Console.Error.WriteLine($"[WikiSave] FAILED: {ex.GetType().Name}: {ex.Message}"); }
+        }
+
+        bool endReport = pmBlock.HasReport;
+        var pmTurn = new AgentTurn
+        {
+            EventId = pmEventId,
+            TurnIndex = history.Count,
+            PersonaId = pmConfig.PersonaId,
+            PersonaName = pmConfig.Name,
+            PersonaLabel = pmConfig.Label,
+            PersonaAvatar = pmConfig.Avatar,
+            IsPm = true,
+            Content = pmContent,
+            ModelUsed = pmResponse.ModelUsed,
+            IsEndReport = endReport,
+            StreamKey = streamKey,
+            IsStreamingPreview = false
+        };
+        history.Add(pmTurn);
+        progress?.Report(pmTurn);
+
+        string? outputsFolder = null, reportPath = null, commitSha = null;
+        if (endReport)
+        {
+            try
+            {
+                var ctx = new PmReportContext
+                {
+                    WorkspaceRoot = workspaceRoot,
+                    RunId = runId,
+                    OriginalUserMessage = input.Message,
+                    ReportSummary = pmBlock.ReportSummary,
+                    ReportBody = pmBlock.ReportBody,
+                    Turns = history
+                        .Where(t => !string.IsNullOrWhiteSpace(t.PersonaId))
+                        .Select(t => new TurnOutputRecord
+                        {
+                            TurnIndex = t.TurnIndex,
+                            PersonaName = t.PersonaName,
+                            PersonaLabel = t.PersonaLabel,
+                            Content = t.Content,
+                            ModelUsed = t.ModelUsed,
+                            WrittenFiles = t.WrittenFiles
+                        })
+                        .ToList()
+                };
+                var aggregated = _pmReport.Aggregate(ctx);
+                outputsFolder = aggregated.OutputsFolder;
+                reportPath = aggregated.ReportPath;
+                commitSha = aggregated.CommitSha;
+            }
+            catch { }
+        }
+
+        var eventId = await LogEventsAsync(input, history, runId, endReport, false, outputsFolder, commitSha, reportPath);
+
+        return new OrchestratorOutput
+        {
+            EventId = eventId,
+            RunId = runId,
+            PersonaId = pmTurn.PersonaId,
+            PersonaLabel = pmTurn.PersonaLabel,
+            PersonaAvatar = pmTurn.PersonaAvatar,
+            Content = pmTurn.Content,
+            ModelUsed = pmTurn.ModelUsed,
+            Verified = true,
+            Turns = history,
+            IsEndReport = endReport,
+            OutputsFolder = outputsFolder,
+            ReportPath = reportPath,
+            CommitSha = commitSha
+        };
+    }
+
+    private static string BuildPmAggregateAddendum()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[취합 모드]");
+        sb.AppendLine("팀원들이 자유 토론을 마쳤다. 너는 결과를 취합·정리하는 역할만 한다.");
+        sb.AppendLine("규칙:");
+        sb.AppendLine("  - handoff·discussion 블록 사용 금지.");
+        sb.AppendLine("  - 각 팀원의 주장을 중립적으로 요약한다.");
+        sb.AppendLine("  - 합의 사항, 잔여 쟁점, 권고 사항을 구분해서 제시한다.");
+        sb.AppendLine("  - 산출물이 있으면 pm_report 블록으로 종료. 추가 확인이 필요하면 pm_intervention 블록 사용.");
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string BuildPmAggregatePrompt(string userMessage, string transcript)
+    {
+        return
+            "[사용자 요청]\n" +
+            userMessage + "\n\n" +
+            "[팀 토론 전사]\n" +
+            transcript + "\n\n" +
+            "위 토론 결과를 취합하여 사용자에게 응답하라.";
     }
 
     // === 팀 파이프라인 (멀티에이전트) ===
@@ -995,6 +1177,7 @@ public class OrchestratorService
         sb.AppendLine("  - edit_file(path, old_text, new_text) — 기존 파일 부분 교체 (old_text는 파일 내 1곳만 존재해야 함)");
         sb.AppendLine("  - append_file(path, content) / make_dir(path) / delete_file(path)");
         sb.AppendLine("  - run_command(command) — 작업 폴더 기준 셸 명령 실행 (빌드·테스트·git). 타임아웃 60초.");
+        sb.AppendLine("  - generate_image(prompt, path, size?, quality?) — DALL-E 3 이미지 생성 후 파일 저장. OPENAI 키 필요.");
         sb.AppendLine("```tool");
         sb.AppendLine("{\"name\": \"<도구명>\", \"args\": {<인자>}}");
         sb.AppendLine("```");
@@ -1071,7 +1254,7 @@ public class OrchestratorService
     private static bool IsFileWritingTool(string toolName)
     {
         var n = toolName?.ToLowerInvariant();
-        return n is "write_file" or "append_file" or "edit_file";
+        return n is "write_file" or "append_file" or "edit_file" or "generate_image";
     }
 
     private static string? GetStringArg(Dictionary<string, object?> args, string key)
@@ -1263,6 +1446,12 @@ public class OrchestratorService
         sb.AppendLine("  - run_command(command): 작업 폴더 기준으로 셸 명령 실행. 타임아웃 60초.");
         sb.AppendLine("      빌드·테스트·git 조회·패키지 설치 등 개발 루프에 활용한다.");
         sb.AppendLine("      예: run_command({\"command\": \"dotnet build\"})");
+        sb.AppendLine("  [AI 이미지 생성]");
+        sb.AppendLine("  - generate_image(prompt, path, size?, quality?): DALL-E 3로 이미지를 생성하여 파일로 저장.");
+        sb.AppendLine("      prompt: 이미지 설명 (영문 권장). path: 저장 경로 (예: assets/logo.png).");
+        sb.AppendLine("      size: \"1024x1024\"(기본) | \"1792x1024\" | \"1024x1792\"");
+        sb.AppendLine("      quality: \"standard\"(기본) | \"hd\"");
+        sb.AppendLine("      설정 > API 키에서 OPENAI 키가 등록되어 있어야 한다.");
         sb.AppendLine();
         sb.AppendLine("도구 호출 형식 (필요할 때만 사용, 한 응답에 여러 개 가능):");
         sb.AppendLine("```tool");
