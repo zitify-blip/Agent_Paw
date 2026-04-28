@@ -207,6 +207,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         await projectSettingsVm.LoadAsync(projectId, projectName);
         WorkspacePageControl.SetProjectSettingsViewModel(projectSettingsVm);
 
+        // ApiSettings는 탭 클릭 시 LoadAsync가 호출되므로 여기서는 VM만 주입
+        var apiSettingsVm = App.GetService<ApiSettingsViewModel>();
+        WorkspacePageControl.SetApiSettingsViewModel(apiSettingsVm);
+
         SubscribeWorkspaceVm(workspaceVm);
 
         if (isNew)

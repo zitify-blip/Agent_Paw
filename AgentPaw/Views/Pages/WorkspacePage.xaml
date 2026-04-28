@@ -142,13 +142,23 @@
                            ToolTip="ADR·SPEC·TROUBLE 지식 문서"
                            Click="WikiTab_Click" />
                 <ui:Button x:Name="SettingsTabBtn"
-                           Content="설정"
+                           Content="환경 설정"
                            Icon="{ui:SymbolIcon Settings24}"
                            Appearance="Secondary"
                            FontFamily="{StaticResource PawFont}"
                            Padding="10,4" FontSize="12"
-                           ToolTip="프로젝트 설정"
+                           Margin="0,0,4,0"
+                           ToolTip="프로젝트 일반 설정"
                            Click="SettingsTab_Click" />
+                <ui:Button x:Name="ApiSettingsTabBtn"
+                           Content="API 설정"
+                           Icon="{ui:SymbolIcon Code24}"
+                           Appearance="Secondary"
+                           FontFamily="{StaticResource PawFont}"
+                           Padding="10,4" FontSize="12"
+                           Margin="0,0,4,0"
+                           ToolTip="페르소나별 LLM 모델·파라미터 설정"
+                           Click="ApiSettingsTab_Click" />
             </StackPanel>
         </Border>
 
@@ -814,6 +824,9 @@
 
             <!-- Project Settings Tab -->
             <ContentControl x:Name="ProjectSettingsHost" Visibility="Collapsed" />
+
+            <!-- API Settings Tab -->
+            <ContentControl x:Name="ApiSettingsHost" Visibility="Collapsed" />
         </Grid>
     </Grid>
 </UserControl>

@@ -98,6 +98,7 @@ public partial class App : Application
                 services.AddTransient<SettingsViewModel>();
                 services.AddTransient<InstructionsViewModel>();
                 services.AddTransient<ProjectSettingsViewModel>();
+                services.AddTransient<ApiSettingsViewModel>();
 
                 // Views
                 services.AddSingleton<MainWindow>();
