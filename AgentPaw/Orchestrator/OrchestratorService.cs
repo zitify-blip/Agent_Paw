@@ -514,7 +514,8 @@ public class OrchestratorService
     {
         var discussionId = Guid.NewGuid().ToString("N")[..8];
         int speakerCounter = 0;
-        int maxTurns = rounds * participants.Count;
+        // 합의(전원 agree)가 주 종료 조건. maxTurns는 무한 루프 방지 안전 캡.
+        int maxTurns = MaxDiscussionRounds * MaxDiscussionParticipants * 3;
 
         // 각 참여자가 마지막으로 발언한 턴 인덱스 (-1 = 미발언)
         var lastSpoke = participants.ToDictionary(p => p.PersonaId, _ => -1);
