@@ -15,6 +15,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _personaInitialized;
     private bool _instructionsInitialized;
     private bool _settingsInitialized;
+    private bool _llmInitialized;
+    private bool _integrationInitialized;
+    private bool _otherSettingsInitialized;
+    private SettingsViewModel? _settingsVm;
     private WorkspaceViewModel? _currentWorkspaceVm;
     private string _currentPage = "projects";
 
@@ -166,14 +170,59 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (!_settingsInitialized)
         {
-            var vm = App.GetService<SettingsViewModel>();
-            var page = new SettingsPage();
-            page.Initialize(vm);
-            SettingsPageHost.Content = page;
+            _settingsVm ??= App.GetService<SettingsViewModel>();
+            _settingsPage = new SettingsPage();
+            _settingsPage.Initialize(_settingsVm);
             _settingsInitialized = true;
         }
+        SettingsPageHost.Content = _settingsPage;
         ShowPage("settings");
     }
+
+    private void NavLlm_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_llmInitialized)
+        {
+            _settingsVm ??= App.GetService<SettingsViewModel>();
+            _llmPage = new LlmSettingsPage();
+            _llmPage.Initialize(_settingsVm);
+            _llmInitialized = true;
+        }
+        SettingsPageHost.Content = _llmPage;
+        ShowPage("settings");
+    }
+
+    private void NavApiIntegration_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_integrationInitialized)
+        {
+            _settingsVm ??= App.GetService<SettingsViewModel>();
+            _integrationPage = new IntegrationSettingsPage();
+            _integrationPage.Initialize(_settingsVm);
+            _integrationInitialized = true;
+        }
+        SettingsPageHost.Content = _integrationPage;
+        ShowPage("settings");
+    }
+
+    private void NavOtherSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_otherSettingsInitialized)
+        {
+            _settingsVm ??= App.GetService<SettingsViewModel>();
+            _otherSettingsPage = new OtherSettingsPage();
+            _otherSettingsPage.Initialize(_settingsVm);
+            _otherSettingsInitialized = true;
+        }
+        SettingsPageHost.Content = _otherSettingsPage;
+        ShowPage("settings");
+    }
+
+    // Page instance caches
+    private SettingsPage? _settingsPage;
+    private LlmSettingsPage? _llmPage;
+    private IntegrationSettingsPage? _integrationPage;
+    private OtherSettingsPage? _otherSettingsPage;
 
     // === Project ===
 

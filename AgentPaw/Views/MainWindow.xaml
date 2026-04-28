@@ -129,7 +129,7 @@
                                        Margin="0,1" Padding="12,8"
                                        Click="NavInstructions_Click" />
                             <ui:Button x:Name="NavSettingsBtn"
-                                       Content="환경 설정"
+                                       Content="설정"
                                        Icon="{ui:SymbolIcon Settings24}"
                                        Appearance="Transparent"
                                        Foreground="{DynamicResource PawSidebarText}"
@@ -138,6 +138,36 @@
                                        HorizontalContentAlignment="Left"
                                        Margin="0,1" Padding="12,8"
                                        Click="NavSettings_Click" />
+                            <ui:Button x:Name="NavLlmBtn"
+                                       Content="LLM"
+                                       Icon="{ui:SymbolIcon Wand24}"
+                                       Appearance="Transparent"
+                                       Foreground="{DynamicResource PawSidebarText}"
+                                       FontFamily="{StaticResource PawFont}"
+                                       HorizontalAlignment="Stretch"
+                                       HorizontalContentAlignment="Left"
+                                       Margin="0,1" Padding="12,8"
+                                       Click="NavLlm_Click" />
+                            <ui:Button x:Name="NavApiBtn"
+                                       Content="API"
+                                       Icon="{ui:SymbolIcon PlugConnected24}"
+                                       Appearance="Transparent"
+                                       Foreground="{DynamicResource PawSidebarText}"
+                                       FontFamily="{StaticResource PawFont}"
+                                       HorizontalAlignment="Stretch"
+                                       HorizontalContentAlignment="Left"
+                                       Margin="0,1" Padding="12,8"
+                                       Click="NavApiIntegration_Click" />
+                            <ui:Button x:Name="NavOtherSettingsBtn"
+                                       Content="기타 설정"
+                                       Icon="{ui:SymbolIcon Options24}"
+                                       Appearance="Transparent"
+                                       Foreground="{DynamicResource PawSidebarText}"
+                                       FontFamily="{StaticResource PawFont}"
+                                       HorizontalAlignment="Stretch"
+                                       HorizontalContentAlignment="Left"
+                                       Margin="0,1" Padding="12,8"
+                                       Click="NavOtherSettings_Click" />
                         </StackPanel>
 
                         <!-- User Info + Logout (bottom) -->
