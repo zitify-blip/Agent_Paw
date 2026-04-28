@@ -25,6 +25,7 @@
             <helpers:NotEmptyToVisibleConverter x:Key="NotEmptyToVisibleConverter" />
             <helpers:IconNameToSymbolConverter x:Key="IconNameToSymbolConverter" />
             <helpers:PersonaColorToBrushConverter x:Key="PersonaColorToBrushConverter" />
+            <helpers:EqualityMultiConverter x:Key="EqualityMultiConverter" />
 
             <!-- ═══════════════════════════════════════════════════════
                  Agent Paw Design System

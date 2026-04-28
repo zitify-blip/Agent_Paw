@@ -150,15 +150,6 @@
                            Margin="0,0,4,0"
                            ToolTip="프로젝트 일반 설정"
                            Click="SettingsTab_Click" />
-                <ui:Button x:Name="ApiSettingsTabBtn"
-                           Content="API 설정"
-                           Icon="{ui:SymbolIcon Code24}"
-                           Appearance="Secondary"
-                           FontFamily="{StaticResource PawFont}"
-                           Padding="10,4" FontSize="12"
-                           Margin="0,0,4,0"
-                           ToolTip="페르소나별 LLM 모델·파라미터 설정"
-                           Click="ApiSettingsTab_Click" />
             </StackPanel>
         </Border>
 
@@ -843,8 +834,6 @@
             <!-- Project Settings Tab -->
             <ContentControl x:Name="ProjectSettingsHost" Visibility="Collapsed" />
 
-            <!-- API Settings Tab -->
-            <ContentControl x:Name="ApiSettingsHost" Visibility="Collapsed" />
         </Grid>
 
         <!-- 상세 보기 오버레이 팝업 -->

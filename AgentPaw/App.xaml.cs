@@ -102,7 +102,6 @@ public partial class App : Application
                 services.AddTransient<SettingsViewModel>();
                 services.AddTransient<InstructionsViewModel>();
                 services.AddTransient<ProjectSettingsViewModel>();
-                services.AddTransient<ApiSettingsViewModel>();
 
                 // Views
                 services.AddSingleton<MainWindow>();
@@ -222,6 +221,8 @@ public partial class App : Application
                     value TEXT NOT NULL,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 );
+                ALTER TABLE wiki_document ADD COLUMN IF NOT EXISTS parent_id TEXT;
+                ALTER TABLE wiki_document ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0;
                 """);
         }
         catch { /* 이미 존재하면 무시 */ }

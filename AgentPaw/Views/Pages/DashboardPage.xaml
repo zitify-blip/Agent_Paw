@@ -197,17 +197,44 @@
                                                    FontFamily="{StaticResource PawFont}"
                                                    Foreground="{DynamicResource PawTextPrimary}"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <Border DockPanel.Dock="Right"
-                                                Background="{DynamicResource PawGoldTint}"
-                                                CornerRadius="4"
-                                                Padding="6,2"
-                                                VerticalAlignment="Top"
-                                                HorizontalAlignment="Right">
-                                            <TextBlock Text="{Binding Role}"
-                                                       FontSize="10"
-                                                       FontFamily="{StaticResource PawFont}"
-                                                       Foreground="{DynamicResource PawGold}" />
-                                        </Border>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top">
+                                            <!-- 채팅 중 배지 -->
+                                            <Border Background="#1A22C55E"
+                                                    BorderBrush="#4422C55E"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="6,2"
+                                                    Margin="0,0,4,0">
+                                                <Border.Visibility>
+                                                    <MultiBinding Converter="{StaticResource EqualityMultiConverter}"
+                                                                  ConverterParameter="TrueToVisible">
+                                                        <Binding Path="ProjectId" />
+                                                        <Binding Path="DataContext.ActiveProjectId"
+                                                                 RelativeSource="{RelativeSource AncestorType=UserControl}" />
+                                                    </MultiBinding>
+                                                </Border.Visibility>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="6" Height="6"
+                                                             Fill="#22C55E"
+                                                             Margin="0,0,5,0"
+                                                             VerticalAlignment="Center" />
+                                                    <TextBlock Text="채팅 중"
+                                                               FontSize="10"
+                                                               FontFamily="{StaticResource PawFont}"
+                                                               Foreground="#22C55E" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Background="{DynamicResource PawGoldTint}"
+                                                    CornerRadius="4"
+                                                    Padding="6,2"
+                                                    VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding Role}"
+                                                           FontSize="10"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Foreground="{DynamicResource PawGold}" />
+                                            </Border>
+                                        </StackPanel>
                                     </DockPanel>
 
                                     <!-- Description -->

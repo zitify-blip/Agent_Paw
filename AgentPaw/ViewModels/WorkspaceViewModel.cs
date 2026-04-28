@@ -646,9 +646,51 @@ public partial class WorkspaceViewModel : ObservableObject
             Messages.Add(new ChatMessage
             {
                 Role = "system",
-                Content = "⏹ 토론이 중단되었습니다.",
+                Content = "⏹ 토론이 중단되었습니다. PM이 진행 내용을 정리합니다…",
                 Timestamp = DateTimeOffset.UtcNow
             });
+
+            var pm = Personas.FirstOrDefault(p => p.IsPm);
+            if (pm != null && _authService.CurrentUserId != null)
+            {
+                try
+                {
+                    using var summaryCts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                    var priorConversation = BuildPriorConversation();
+                    var summaryInput = new OrchestratorInput
+                    {
+                        ProjectId = ProjectId,
+                        UserId = _authService.CurrentUserId,
+                        Message = "대화가 중단되었습니다. 지금까지 논의된 내용을 간결하게 정리하고, 현재 진행 상태와 미결 사항을 요약해주세요.",
+                        ForcePersonaId = pm.PersonaId,
+                        AskUserEnabled = false,
+                        PriorConversation = priorConversation.Count > 0 ? priorConversation : null
+                    };
+                    var summaryProgress = new Progress<AgentTurn>(turn =>
+                    {
+                        var existingIdx = !string.IsNullOrEmpty(turn.StreamKey)
+                            ? IndexOfStreamKey(turn.StreamKey)
+                            : -1;
+                        if (turn.IsStreamingPreview)
+                        {
+                            if (existingIdx >= 0)
+                                Messages[existingIdx].Content = turn.Content;
+                            else
+                                Messages.Add(BuildAssistantMessage(turn, previewOnly: true));
+                        }
+                        else
+                        {
+                            var finalized = BuildAssistantMessage(turn, previewOnly: false);
+                            if (existingIdx >= 0)
+                                Messages[existingIdx] = finalized;
+                            else
+                                Messages.Add(finalized);
+                        }
+                    });
+                    await _orchestrator.RunPipelineAsync(summaryInput, summaryProgress, summaryCts.Token);
+                }
+                catch { /* 요약 실패 무시 */ }
+            }
         }
         catch (Exception ex)
         {

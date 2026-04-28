@@ -15,8 +15,6 @@ public partial class WorkspacePage : UserControl
     private TimelineViewModel? _timelineVm;
     private WikiViewModel? _wikiVm;
     private ProjectSettingsViewModel? _projectSettingsVm;
-    private ApiSettingsViewModel? _apiSettingsVm;
-
     private int _mentionAnchor = -1;
 
     public WorkspacePage()
@@ -33,7 +31,6 @@ public partial class WorkspacePage : UserControl
         DataContext = vm;
         _timelineVm = null;
         _wikiVm = null;
-        _apiSettingsVm = null;
 
         if (resetTab)
             SetTabVisibility("chat");
@@ -65,14 +62,6 @@ public partial class WorkspacePage : UserControl
         var page = new ProjectSettingsPage();
         page.Initialize(vm);
         ProjectSettingsHost.Content = page;
-    }
-
-    public void SetApiSettingsViewModel(ApiSettingsViewModel vm)
-    {
-        _apiSettingsVm = vm;
-        var page = new ApiSettingsPage();
-        page.Initialize(vm);
-        ApiSettingsHost.Content = page;
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -281,20 +270,12 @@ public partial class WorkspacePage : UserControl
         SetTabVisibility("settings");
     }
 
-    private async void ApiSettingsTab_Click(object sender, RoutedEventArgs e)
-    {
-        SetTabVisibility("api_settings");
-        if (_apiSettingsVm != null && DataContext is WorkspaceViewModel vm)
-            await _apiSettingsVm.LoadAsync(vm.ProjectId);
-    }
-
     private void SetTabVisibility(string active)
     {
         ChatPanel.Visibility = active == "chat" ? Visibility.Visible : Visibility.Collapsed;
         TimelineHost.Visibility = active == "timeline" ? Visibility.Visible : Visibility.Collapsed;
         WikiHost.Visibility = active == "wiki" ? Visibility.Visible : Visibility.Collapsed;
         ProjectSettingsHost.Visibility = active == "settings" ? Visibility.Visible : Visibility.Collapsed;
-        ApiSettingsHost.Visibility = active == "api_settings" ? Visibility.Visible : Visibility.Collapsed;
 
         ChatTabBtn.Appearance = active == "chat"
             ? Wpf.Ui.Controls.ControlAppearance.Primary
@@ -306,9 +287,6 @@ public partial class WorkspacePage : UserControl
             ? Wpf.Ui.Controls.ControlAppearance.Primary
             : Wpf.Ui.Controls.ControlAppearance.Secondary;
         SettingsTabBtn.Appearance = active == "settings"
-            ? Wpf.Ui.Controls.ControlAppearance.Primary
-            : Wpf.Ui.Controls.ControlAppearance.Secondary;
-        ApiSettingsTabBtn.Appearance = active == "api_settings"
             ? Wpf.Ui.Controls.ControlAppearance.Primary
             : Wpf.Ui.Controls.ControlAppearance.Secondary;
     }

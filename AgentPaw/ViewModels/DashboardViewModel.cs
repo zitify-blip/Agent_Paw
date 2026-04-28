@@ -36,6 +36,9 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private string? _editingProjectId;
 
+    [ObservableProperty]
+    private string? _activeProjectId;
+
     public ObservableCollection<ProjectListItem> Projects { get; } = [];
     public ObservableCollection<ProjectListItem> ArchivedProjects { get; } = [];
 
