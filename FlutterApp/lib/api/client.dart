@@ -57,6 +57,15 @@ class ApiClient {
     return body;
   }
 
+  static Future<dynamic> _delete(String path) async {
+    final res = await http.delete(Uri.parse(_url(path)), headers: _headers);
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, body['error'] as String? ?? 'Error');
+    }
+    return body;
+  }
+
   static Future<bool> checkHealth() async {
     try {
       final res = await http
@@ -221,6 +230,32 @@ class ApiClient {
       String projectId, String wikiId) async {
     final json = await _get('/m/projects/$projectId/wiki/$wikiId');
     return WikiDocument.fromJson(json as Map<String, dynamic>);
+  }
+
+  static Future<List<WikiDocument>> consolidateWiki(String projectId) async {
+    final json = await _post('/m/projects/$projectId/wiki/consolidate', {});
+    return (json as List<dynamic>)
+        .map((e) => WikiDocument.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<WikiDocument> updateWiki(
+    String projectId,
+    String wikiId, {
+    String? title,
+    String? content,
+    String? category,
+  }) async {
+    final json = await _patch('/m/projects/$projectId/wiki/$wikiId', {
+      if (title != null) 'title': title,
+      if (content != null) 'content': content,
+      if (category != null) 'category': category,
+    });
+    return WikiDocument.fromJson(json as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteWiki(String projectId, String wikiId) async {
+    await _delete('/m/projects/$projectId/wiki/$wikiId');
   }
 
   static Future<List<TimelineEvent>> getTimeline(String projectId,

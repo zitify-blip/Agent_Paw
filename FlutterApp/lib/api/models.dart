@@ -1,3 +1,8 @@
+DateTime _parseUtc(String s) {
+  final dt = DateTime.parse(s);
+  return dt.isUtc ? dt : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.millisecond);
+}
+
 class UserInfo {
   final String userId;
   final String email;
@@ -49,7 +54,7 @@ class Project {
         maxDiscussionRounds: json['maxDiscussionRounds'] as int? ?? 10,
         maxDiscussionParticipants: json['maxDiscussionParticipants'] as int? ?? 4,
         createdAt: json['createdAt'] != null
-            ? DateTime.tryParse(json['createdAt'] as String)
+            ? _parseUtc(json['createdAt'] as String)
             : null,
       );
 }
@@ -74,7 +79,7 @@ class ChatMessage {
         eventType: json['eventType'] as String,
         payload: json['payload'] as Map<String, dynamic>?,
         modelUsed: json['modelUsed'] as String?,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        createdAt: _parseUtc(json['createdAt'] as String),
       );
 
   bool get isUser => eventType == 'USER_MESSAGE';
@@ -218,7 +223,7 @@ class WikiDocument {
         content: json['content'] as String?,
         version: json['version'] as int? ?? 1,
         updatedAt: json['updatedAt'] != null
-            ? DateTime.tryParse(json['updatedAt'] as String)
+            ? _parseUtc(json['updatedAt'] as String)
             : null,
       );
 }
@@ -243,6 +248,6 @@ class TimelineEvent {
         eventType: json['eventType'] as String,
         modelUsed: json['modelUsed'] as String?,
         triggeredBy: json['triggeredBy'] as String?,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        createdAt: _parseUtc(json['createdAt'] as String),
       );
 }
