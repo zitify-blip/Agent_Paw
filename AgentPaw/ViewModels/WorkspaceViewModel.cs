@@ -695,6 +695,29 @@ public partial class WorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task RetryLastMessageAsync()
+    {
+        // 에러 메시지 제거
+        while (Messages.Count > 0 && Messages[^1].Role == "error")
+            Messages.RemoveAt(Messages.Count - 1);
+
+        // 직전 user 메시지 찾기
+        if (Messages.Count == 0 || Messages[^1].Role != "user") return;
+        var lastUserMsg = Messages[^1];
+        Messages.RemoveAt(Messages.Count - 1);
+
+        // 동일 메시지 재전송
+        InputMessage = lastUserMsg.Content;
+        await SendMessageAsync();
+    }
+
+    [RelayCommand]
+    private void DismissError(ChatMessage msg)
+    {
+        Messages.Remove(msg);
+    }
+
+    [RelayCommand]
     private void ShowMessageDetail(ChatMessage msg)
     {
         DetailMessage = msg;

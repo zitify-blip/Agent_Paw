@@ -496,11 +496,32 @@
                                         <Border.BorderBrush>
                                             <SolidColorBrush Color="{StaticResource PawErrorRedColor}" Opacity="0.35" />
                                         </Border.BorderBrush>
-                                        <TextBlock Text="{Binding Content}"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="14"
-                                                   FontFamily="{StaticResource PawFont}"
-                                                   Foreground="{DynamicResource PawErrorRed}" />
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Content}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="14"
+                                                       FontFamily="{StaticResource PawFont}"
+                                                       Foreground="{DynamicResource PawErrorRed}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <ui:Button Content="재시도"
+                                                           Icon="{ui:SymbolIcon ArrowCounterclockwise24}"
+                                                           Appearance="Secondary"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Padding="8,4" FontSize="12"
+                                                           Margin="0,0,8,0"
+                                                           ToolTip="마지막 메시지를 재전송한다"
+                                                           IsEnabled="{Binding DataContext.IsLoading, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource InverseBoolConverter}}"
+                                                           Command="{Binding DataContext.RetryLastMessageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                                                <ui:Button Content="다음으로"
+                                                           Icon="{ui:SymbolIcon ArrowForward24}"
+                                                           Appearance="Transparent"
+                                                           FontFamily="{StaticResource PawFont}"
+                                                           Padding="8,4" FontSize="12"
+                                                           ToolTip="오류를 무시하고 계속한다"
+                                                           Command="{Binding DataContext.DismissErrorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                        </StackPanel>
                                     </Border>
                                 </Grid>
                             </DataTemplate>
