@@ -22,14 +22,21 @@ public partial class WorkspacePage : UserControl
         InitializeComponent();
     }
 
-    public void Initialize(WorkspaceViewModel vm)
+    public void Initialize(WorkspaceViewModel vm, bool resetTab = true)
     {
+        // 이전 VM의 이벤트 핸들러 해제 (중복 등록 방지)
+        if (DataContext is WorkspaceViewModel oldVm && !ReferenceEquals(oldVm, vm))
+            oldVm.Messages.CollectionChanged -= OnMessagesChanged;
+
         DataContext = vm;
         _timelineVm = null;
         _wikiVm = null;
-        SetTabVisibility("chat");
 
-        // 새 메시지 추가 시 자동 스크롤
+        if (resetTab)
+            SetTabVisibility("chat");
+
+        // 동일 VM 재사용 시 중복 등록 방지
+        vm.Messages.CollectionChanged -= OnMessagesChanged;
         vm.Messages.CollectionChanged += OnMessagesChanged;
     }
 

@@ -18,6 +18,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private WorkspaceViewModel? _currentWorkspaceVm;
     private string _currentPage = "projects";
 
+    // ProjectId → ViewModel 캐시 (메뉴 이동 후 복귀 시 상태 보존)
+    private readonly Dictionary<string, WorkspaceViewModel>  _workspaceVmCache  = new();
+    private readonly Dictionary<string, TimelineViewModel>   _timelineVmCache   = new();
+    private readonly Dictionary<string, WikiViewModel>       _wikiVmCache       = new();
+
     public MainWindow(MainViewModel viewModel, LoginViewModel loginViewModel, DashboardViewModel dashboardViewModel, AuthService authService)
     {
         _viewModel = viewModel;
@@ -174,21 +179,43 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void OnProjectSelected(string projectId, string projectName)
     {
-        var workspaceVm = App.GetService<WorkspaceViewModel>();
-        WorkspacePageControl.Initialize(workspaceVm);
+        // 캐시 히트: 동일 프로젝트 재진입 시 기존 VM 재사용 → 메시지·탭 상태 보존
+        var isNew = !_workspaceVmCache.ContainsKey(projectId);
 
-        var timelineVm = App.GetService<TimelineViewModel>();
-        var wikiVm = App.GetService<WikiViewModel>();
+        if (!_workspaceVmCache.TryGetValue(projectId, out var workspaceVm))
+        {
+            workspaceVm = App.GetService<WorkspaceViewModel>();
+            _workspaceVmCache[projectId] = workspaceVm;
+        }
+        if (!_timelineVmCache.TryGetValue(projectId, out var timelineVm))
+        {
+            timelineVm = App.GetService<TimelineViewModel>();
+            _timelineVmCache[projectId] = timelineVm;
+        }
+        if (!_wikiVmCache.TryGetValue(projectId, out var wikiVm))
+        {
+            wikiVm = App.GetService<WikiViewModel>();
+            _wikiVmCache[projectId] = wikiVm;
+        }
+
+        WorkspacePageControl.Initialize(workspaceVm, resetTab: isNew);
         WorkspacePageControl.SetTimelineViewModel(timelineVm);
         WorkspacePageControl.SetWikiViewModel(wikiVm);
 
-        // ProjectSettings를 WorkspacePage에 연결
+        // ProjectSettings는 항상 최신 상태로 로드
         var projectSettingsVm = App.GetService<ProjectSettingsViewModel>();
         await projectSettingsVm.LoadAsync(projectId, projectName);
         WorkspacePageControl.SetProjectSettingsViewModel(projectSettingsVm);
 
         SubscribeWorkspaceVm(workspaceVm);
-        await workspaceVm.LoadWorkspaceAsync(projectId, projectName);
+
+        if (isNew)
+        {
+            // 첫 진입: DB에서 히스토리 + 페르소나 전체 로드
+            await workspaceVm.LoadWorkspaceAsync(projectId, projectName);
+            // 타임라인도 미리 로드해 탭 클릭 시 즉시 표시
+            await timelineVm.LoadAsync(projectId);
+        }
 
         ShowPage("workspace");
     }
@@ -200,6 +227,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void LogoutButton_Click(object sender, RoutedEventArgs e)
     {
+        _workspaceVmCache.Clear();
+        _timelineVmCache.Clear();
+        _wikiVmCache.Clear();
         await _viewModel.LogoutCommand.ExecuteAsync(null);
         UpdateVisibility();
     }
