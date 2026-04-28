@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AgentPaw.Models;
+using AgentPaw.Orchestrator;
 using AgentPaw.Services;
 
 namespace AgentPaw.ViewModels;
@@ -9,9 +10,11 @@ namespace AgentPaw.ViewModels;
 public partial class WikiViewModel : ObservableObject
 {
     private readonly WikiService _wikiService;
+    private readonly OrchestratorService _orchestrator;
 
     [ObservableProperty] private string _projectId = string.Empty;
     [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private bool _isConsolidating;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string _searchQuery = string.Empty;
     [ObservableProperty] private string _activeCategory = "ALL";
@@ -40,9 +43,10 @@ public partial class WikiViewModel : ObservableObject
     [ObservableProperty] private int _specCount;
     [ObservableProperty] private int _troubleCount;
 
-    public WikiViewModel(WikiService wikiService)
+    public WikiViewModel(WikiService wikiService, OrchestratorService orchestrator)
     {
         _wikiService = wikiService;
+        _orchestrator = orchestrator;
     }
 
     public async Task LoadAsync(string projectId)
@@ -214,6 +218,27 @@ public partial class WikiViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ConsolidateWikiAsync()
+    {
+        if (IsConsolidating) return;
+        IsConsolidating = true;
+        ErrorMessage = null;
+        try
+        {
+            await _orchestrator.ConsolidateWikiAsync(ProjectId);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            IsConsolidating = false;
         }
     }
 }

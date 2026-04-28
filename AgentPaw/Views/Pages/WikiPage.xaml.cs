@@ -79,6 +79,12 @@ public partial class WikiPage : UserControl
         }
     }
 
+    private async void ConsolidateWiki_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WikiViewModel vm)
+            await vm.ConsolidateWikiCommand.ExecuteAsync(null);
+    }
+
     private void CloseCreateDialog_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is WikiViewModel vm) vm.CloseCreateDialogCommand.Execute(null);

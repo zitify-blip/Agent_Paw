@@ -34,6 +34,21 @@
                            ToolTip="새 위키 문서 작성"
                            Click="CreateWiki_Click" />
 
+                <!-- 정리하기 button group (dock right, rendered left of 새 위키) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,8,0">
+                    <ui:ProgressRing Width="16" Height="16"
+                                     Foreground="{DynamicResource PawGold}"
+                                     VerticalAlignment="Center" Margin="0,0,6,0"
+                                     Visibility="{Binding IsConsolidating, Converter={StaticResource BoolToVisConverter}}" />
+                    <ui:Button Content="정리하기"
+                               Icon="{ui:SymbolIcon Sparkle24}"
+                               Appearance="Secondary"
+                               FontFamily="{StaticResource PawFont}"
+                               ToolTip="대화 내용을 분석하여 위키 문서를 자동 생성합니다."
+                               IsEnabled="{Binding IsConsolidating, Converter={StaticResource InverseBoolConverter}}"
+                               Click="ConsolidateWiki_Click" />
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal">
                     <ui:TextBox x:Name="SearchInput"
                                 Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
