@@ -41,6 +41,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DashboardPageControl.DataContext = dashboardViewModel;
         DashboardPageControl.ProjectSelected += OnProjectSelected;
         WorkspacePageControl.BackRequested += OnWorkspaceBack;
+        WorkspacePageControl.DevAgentRequested += NavigateToDevAgentForCurrentProject;
         loginViewModel.LoginSucceeded += OnLoginSucceeded;
 
         // Listen for auth state changes
@@ -229,6 +230,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void NavDevAgent_Click(object sender, RoutedEventArgs e)
     {
+        NavigateToDevAgentForCurrentProject();
+    }
+
+    // WorkspacePage의 숏컷 버튼 또는 네비 버튼에서 호출된다
+    internal void NavigateToDevAgentForCurrentProject()
+    {
         if (!_devAgentInitialized)
         {
             var vm = App.GetService<DevAgentViewModel>();
@@ -238,13 +245,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _devAgentInitialized = true;
         }
 
-        // 현재 열려있는 프로젝트의 작업 디렉토리를 dev agent에 전달
+        // 현재 열린 프로젝트의 ID로 dev 루트 자동 연결
         if (_currentWorkspaceVm != null)
         {
             var vm = App.GetService<DevAgentViewModel>();
             vm.SetProject(
-                _currentWorkspaceVm.ProjectName ?? "",
-                _currentWorkspaceVm.WorkspacePath ?? "");
+                _currentWorkspaceVm.ProjectId,
+                _currentWorkspaceVm.ProjectName ?? "");
         }
 
         ShowPage("devagent");

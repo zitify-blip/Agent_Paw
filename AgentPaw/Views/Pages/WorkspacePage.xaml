@@ -98,6 +98,11 @@
                             </Border>
                         </Popup>
                     </Grid>
+                    <ui:Button Icon="{ui:SymbolIcon Code24}"
+                               Appearance="Transparent"
+                               Click="OpenDevAgent_Click"
+                               Margin="0,0,4,0"
+                               ToolTip="개발 에이전트 열기 — 이 프로젝트의 코드 작업 폴더로 이동" />
                     <ui:Button Icon="{ui:SymbolIcon FolderOpen24}"
                                Appearance="Transparent"
                                Command="{Binding OpenWorkspaceFolderCommand}"

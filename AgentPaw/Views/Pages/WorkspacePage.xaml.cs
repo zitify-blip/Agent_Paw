@@ -11,6 +11,7 @@ namespace AgentPaw.Views.Pages;
 public partial class WorkspacePage : UserControl
 {
     public event Action? BackRequested;
+    public event Action? DevAgentRequested;
 
     private TimelineViewModel? _timelineVm;
     private WikiViewModel? _wikiVm;
@@ -202,6 +203,11 @@ public partial class WorkspacePage : UserControl
     private void BackButton_Click(object sender, RoutedEventArgs e)
     {
         BackRequested?.Invoke();
+    }
+
+    private void OpenDevAgent_Click(object sender, RoutedEventArgs e)
+    {
+        DevAgentRequested?.Invoke();
     }
 
     private async void AttachFile_Click(object sender, RoutedEventArgs e)

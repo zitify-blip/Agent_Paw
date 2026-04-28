@@ -47,12 +47,17 @@ public partial class DevAgentViewModel : ObservableObject
     [ObservableProperty] private string _inputText = "";
     [ObservableProperty] private bool _isRunning;
 
-    // 개발 프로젝트 저장 루트
+    // 현재 연결된 AgentPaw 프로젝트 이름 (헤더 표시용)
+    [ObservableProperty] private string _linkedProjectName = "";
+
+    // 개발 프로젝트 저장 루트 (baseRoot/{projectId}/)
     [ObservableProperty] private string _devProjectsRoot = "";
 
     // 현재 선택된 기존 프로젝트 (null = 새 프로젝트)
     [ObservableProperty] private DevProjectRecord? _selectedProject;
 
+    private string _baseDevRoot = DevAgentService.LoadSavedRoot();
+    private string _currentProjectId = "";
     private CancellationTokenSource? _cts;
     private bool _hasSession;
 
@@ -62,17 +67,29 @@ public partial class DevAgentViewModel : ObservableObject
     public DevAgentViewModel(DevAgentService devAgent)
     {
         _devAgent = devAgent;
-        DevProjectsRoot = DevAgentService.LoadSavedRoot();
-        RefreshProjectList();
+        // 프로젝트가 없을 때 기본 루트
+        DevProjectsRoot = _baseDevRoot;
     }
 
     /// <summary>
-    /// MainWindow에서 현재 프로젝트 컨텍스트를 전달할 때 호출된다.
-    /// DevAgent는 독립 저장 폴더를 사용하므로 workspace path는 무시한다.
+    /// MainWindow에서 현재 AgentPaw 프로젝트를 연결한다.
+    /// 개발 루트를 baseRoot/{projectId}/ 로 자동 설정한다.
     /// </summary>
-    public void SetProject(string name, string workspacePath)
+    public void SetProject(string projectId, string projectName)
     {
-        // workspace 경로는 사용하지 않음 — dev projects root만 사용
+        LinkedProjectName = projectName;
+
+        if (_currentProjectId == projectId) return; // 동일 프로젝트면 세션 유지
+
+        _currentProjectId = projectId;
+        DevProjectsRoot = string.IsNullOrEmpty(projectId)
+            ? _baseDevRoot
+            : Path.Combine(_baseDevRoot, projectId);
+
+        // 프로젝트가 바뀌면 선택·세션 초기화
+        SelectedProject = null;
+        _hasSession = false;
+        Messages.Clear();
         RefreshProjectList();
     }
 
@@ -159,8 +176,12 @@ public partial class DevAgentViewModel : ObservableObject
         var path = System.IO.Path.GetDirectoryName(dialog.FileName) ?? dialog.FileName;
         if (string.IsNullOrWhiteSpace(path)) return;
 
-        DevProjectsRoot = path;
+        _baseDevRoot = path;
         DevAgentService.SaveRoot(path);
+        DevProjectsRoot = string.IsNullOrEmpty(_currentProjectId)
+            ? _baseDevRoot
+            : Path.Combine(_baseDevRoot, _currentProjectId);
+
         SelectedProject = null;
         _hasSession = false;
         Messages.Clear();

@@ -204,23 +204,34 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </StackPanel>
-                        <!-- 경로 (없으면 저장 루트) -->
-                        <TextBlock FontSize="10"
-                                   FontFamily="{StaticResource PawFont}"
-                                   Foreground="{DynamicResource PawTextSecondary}"
-                                   Margin="24,1,0,0"
-                                   Opacity="0.8">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{Binding SelectedProject.Path}" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedProject}" Value="{x:Null}">
-                                            <Setter Property="Text" Value="{Binding DevProjectsRoot}" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <!-- 경로 (없으면 저장 루트) + 연결 프로젝트 -->
+                        <StackPanel Orientation="Horizontal" Margin="24,1,0,0">
+                            <!-- 연결된 AgentPaw 프로젝트 배지 -->
+                            <Border CornerRadius="4" Padding="5,1" Margin="0,0,6,0"
+                                    Visibility="{Binding LinkedProjectName, Converter={StaticResource NullToCollapsedConverter}}">
+                                <Border.Background>
+                                    <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.15" />
+                                </Border.Background>
+                                <TextBlock Text="{Binding LinkedProjectName}"
+                                           FontSize="9" FontFamily="{StaticResource PawFont}"
+                                           Foreground="{DynamicResource PawGold}" />
+                            </Border>
+                            <TextBlock FontSize="10"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextSecondary}"
+                                       Opacity="0.8">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{Binding SelectedProject.Path}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedProject}" Value="{x:Null}">
+                                                <Setter Property="Text" Value="{Binding DevProjectsRoot}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
