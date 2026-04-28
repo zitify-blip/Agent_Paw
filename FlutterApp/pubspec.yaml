@@ -1,7 +1,7 @@
 name: agent_paw
 description: Agent Paw mobile client for Android
 publish_to: none
-version: 0.5.6+1
+version: 0.5.7+1
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
