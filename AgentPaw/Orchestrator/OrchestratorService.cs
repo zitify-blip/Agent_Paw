@@ -22,7 +22,7 @@ public class OrchestratorService
 
     private const int MaxIterations = 24;
     private const int MaxHandoffs = 12;
-    private const int MaxDiscussionRounds = 3;
+    private const int MaxDiscussionRounds = 10;
     private const int MaxDiscussionParticipants = 4;
 
     public OrchestratorService(
