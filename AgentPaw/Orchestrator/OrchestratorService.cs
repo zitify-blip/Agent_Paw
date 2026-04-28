@@ -1716,18 +1716,21 @@ public class OrchestratorService
             .Take(200)
             .ToListAsync();
 
-        if (events.Count == 0) return [];
+        // Load existing wiki documents
+        var existingDocs = await _wiki.ListWikisAsync(projectId);
+
+        if (events.Count == 0 && existingDocs.Count == 0) return [];
 
         // Build conversation transcript
-        var sb = new System.Text.StringBuilder();
+        var transcriptSb = new System.Text.StringBuilder();
         foreach (var e in events)
         {
             var sender = e.EventType == "USER_MESSAGE" ? "User" : "Agent";
             string content = "";
             try
             {
-                using var doc = JsonDocument.Parse(e.Payload);
-                var root = doc.RootElement;
+                using var jdoc = JsonDocument.Parse(e.Payload);
+                var root = jdoc.RootElement;
                 content = (root.TryGetProperty("message", out var msg) ? msg.GetString() : null)
                        ?? (root.TryGetProperty("content", out var cnt) ? cnt.GetString() : null)
                        ?? (root.TryGetProperty("text", out var txt) ? txt.GetString() : null)
@@ -1735,70 +1738,185 @@ public class OrchestratorService
             }
             catch { }
             if (!string.IsNullOrWhiteSpace(content))
-                sb.AppendLine($"[{sender}] {content}");
+                transcriptSb.AppendLine($"[{sender}] {content}");
         }
 
-        var transcript = sb.ToString();
+        // Build existing wiki index
+        var existingSb = new System.Text.StringBuilder();
+        if (existingDocs.Count > 0)
+        {
+            existingSb.AppendLine("=== 기존 위키 문서 목록 ===");
+            foreach (var d in existingDocs)
+            {
+                existingSb.AppendLine($"wikiId: {d.WikiId}");
+                existingSb.AppendLine($"parentId: {(d.ParentId ?? "(없음)")}");
+                existingSb.AppendLine($"title: {d.Title}");
+                var preview = d.Content.Length > 400 ? d.Content[..400] + "…" : d.Content;
+                existingSb.AppendLine($"content: {preview}");
+                existingSb.AppendLine("---");
+            }
+        }
 
-        // Get a persona model to use (PM persona, or fallback to claude-sonnet-4-6)
         var personas = await _configLoader.ListPersonasAsync(projectId);
         var pm = personas.FirstOrDefault(p => p.IsPm) ?? personas.FirstOrDefault();
         var primaryModel = pm?.PrimaryModel ?? "claude-sonnet-4-6";
         var fallbackModel = pm?.FallbackModel;
 
         var systemPrompt = """
-You are a knowledge management specialist. Analyze the conversation transcript below and extract structured knowledge into a wiki knowledge base.
+You are a knowledge management specialist organizing a project wiki.
 
-Return ONLY a valid JSON array (no markdown, no explanation) with entries in this format:
-[
-  {
-    "category": "결정사항",
-    "title": "...",
-    "content": "..."
-  }
-]
+You receive:
+1. EXISTING wiki documents (each with a wikiId)
+2. A recent conversation transcript with new knowledge
 
-Use these categories as appropriate:
-- 결정사항: Key decisions made during the conversation
-- 기술명세: Technical specifications, architecture, or design decisions
-- 문제해결: Problems encountered and their solutions
-- 프로세스: Workflows, procedures, or process definitions
+Your tasks:
+- Extract meaningful new knowledge from the conversation
+- MERGE duplicates or overlapping topics into the existing document (update its content)
+- Detect PARENT-CHILD relationships between topics and assign a proper hierarchy
+- Reorganize existing documents into a logical hierarchy when beneficial
 
-The content field should be formatted as Markdown. Be thorough but concise. Only include meaningful knowledge, not small talk or trivial exchanges. Respond in Korean.
+Return ONLY a valid JSON object (no markdown, no explanation):
+{
+  "merges": [
+    {
+      "wikiId": "<existing wikiId>",
+      "title": "<updated title>",
+      "content": "<merged Markdown content>"
+    }
+  ],
+  "creates": [
+    {
+      "tempId": "c1",
+      "title": "...",
+      "content": "<Markdown content>",
+      "parentRef": null
+    },
+    {
+      "tempId": "c2",
+      "title": "...",
+      "content": "...",
+      "parentRef": "c1"
+    },
+    {
+      "tempId": "c3",
+      "title": "...",
+      "content": "...",
+      "parentRef": "<existing wikiId>"
+    }
+  ],
+  "reparents": [
+    {
+      "wikiId": "<existing wikiId>",
+      "newParentRef": "<existing wikiId or tempId or null>"
+    }
+  ]
+}
+
+Rules:
+- parentRef / newParentRef: null = root level, tempId string = child of a newly created page, existing wikiId = child of existing page
+- Only merge when content truly overlaps. Do NOT merge unrelated topics into one page.
+- Only create pages for knowledge NOT already covered by existing docs.
+- If nothing to do for a section, use [].
+- Respond in Korean for all titles and content.
 """;
 
+        var userContent = new System.Text.StringBuilder();
+        if (existingDocs.Count > 0)
+            userContent.AppendLine(existingSb.ToString());
+        if (transcriptSb.Length > 0)
+        {
+            userContent.AppendLine("=== 최근 대화 내용 ===");
+            userContent.AppendLine(transcriptSb.ToString());
+        }
+
         var response = await _aiClient.ChatWithFallbackAsync(
-            primaryModel,
-            fallbackModel,
-            systemPrompt,
-            $"Conversation transcript:\n\n{transcript}",
-            temperature: 0.3f,
-            maxTokens: 4096
+            primaryModel, fallbackModel, systemPrompt, userContent.ToString(),
+            temperature: 0.2f, maxTokens: 8192
         );
 
-        // Parse JSON response
-        var created = new List<WikiDocument>();
+        var modified = new List<WikiDocument>();
         try
         {
             var text = response.Content.Trim();
-            // Strip markdown code fences if present
             if (text.StartsWith("```")) text = text[(text.IndexOf('\n') + 1)..];
             if (text.EndsWith("```")) text = text[..text.LastIndexOf("```")].TrimEnd();
 
-            using var doc = JsonDocument.Parse(text);
-            foreach (var item in doc.RootElement.EnumerateArray())
+            using var jdoc = JsonDocument.Parse(text);
+            var root = jdoc.RootElement;
+
+            // 1. Merges — update existing docs with deduplicated/merged content
+            if (root.TryGetProperty("merges", out var merges))
             {
-                var category = item.TryGetProperty("category", out var c) ? c.GetString() ?? "일반" : "일반";
-                var title    = item.TryGetProperty("title",    out var t) ? t.GetString() ?? "" : "";
-                var content  = item.TryGetProperty("content",  out var ct) ? ct.GetString() ?? "" : "";
-                if (string.IsNullOrWhiteSpace(title)) continue;
-                var wiki = await _wiki.CreateWikiAsync(projectId, category, title, content);
-                created.Add(wiki);
+                foreach (var item in merges.EnumerateArray())
+                {
+                    var wikiId  = item.TryGetProperty("wikiId",  out var wi) ? wi.GetString() : null;
+                    var title   = item.TryGetProperty("title",   out var ti) ? ti.GetString() : null;
+                    var content = item.TryGetProperty("content", out var ci) ? ci.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(wikiId)) continue;
+                    var existing = existingDocs.FirstOrDefault(d => d.WikiId == wikiId);
+                    if (existing == null) continue;
+                    await _wiki.UpdateWikiAsync(wikiId, title, content, null);
+                    if (title != null) existing.Title = title;
+                    if (content != null) existing.Content = content;
+                    modified.Add(existing);
+                }
+            }
+
+            // 2. Creates — new pages; parentRef may be tempId or existing wikiId
+            var tempIdMap = new Dictionary<string, string>(); // tempId → real wikiId
+            if (root.TryGetProperty("creates", out var creates))
+            {
+                foreach (var item in creates.EnumerateArray())
+                {
+                    var tempId    = item.TryGetProperty("tempId",    out var ti) ? ti.GetString() ?? "" : "";
+                    var title     = item.TryGetProperty("title",     out var t)  ? t.GetString()  ?? "" : "";
+                    var content   = item.TryGetProperty("content",   out var c)  ? c.GetString()  ?? "" : "";
+                    var parentRef = item.TryGetProperty("parentRef", out var pr) && pr.ValueKind != JsonValueKind.Null
+                                        ? pr.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+
+                    string? resolvedParentId = null;
+                    if (!string.IsNullOrWhiteSpace(parentRef))
+                    {
+                        if (tempIdMap.TryGetValue(parentRef, out var mapped))
+                            resolvedParentId = mapped;
+                        else if (existingDocs.Any(d => d.WikiId == parentRef))
+                            resolvedParentId = parentRef;
+                    }
+
+                    var created = await _wiki.CreateWikiAsync(projectId, "일반", title, content, parentId: resolvedParentId);
+                    if (!string.IsNullOrWhiteSpace(tempId)) tempIdMap[tempId] = created.WikiId;
+                    modified.Add(created);
+                }
+            }
+
+            // 3. Reparents — reorganize existing docs' hierarchy
+            if (root.TryGetProperty("reparents", out var reparents))
+            {
+                foreach (var item in reparents.EnumerateArray())
+                {
+                    var wikiId       = item.TryGetProperty("wikiId",       out var wi)  ? wi.GetString()  : null;
+                    var newParentRef = item.TryGetProperty("newParentRef",  out var npr) && npr.ValueKind != JsonValueKind.Null
+                                           ? npr.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(wikiId)) continue;
+                    if (!existingDocs.Any(d => d.WikiId == wikiId)) continue;
+
+                    string? resolvedParentId = null;
+                    if (!string.IsNullOrWhiteSpace(newParentRef))
+                    {
+                        if (tempIdMap.TryGetValue(newParentRef, out var mapped))
+                            resolvedParentId = mapped;
+                        else if (existingDocs.Any(d => d.WikiId == newParentRef))
+                            resolvedParentId = newParentRef;
+                    }
+
+                    await _wiki.SetParentAsync(wikiId, resolvedParentId);
+                }
             }
         }
         catch { }
 
-        return created;
+        return modified;
     }
 }
 

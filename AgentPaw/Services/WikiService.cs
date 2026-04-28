@@ -85,6 +85,16 @@ public class WikiService
             .ToListAsync();
     }
 
+    public async Task SetParentAsync(string wikiId, string? parentId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var wiki = await db.WikiDocuments.FindAsync(wikiId);
+        if (wiki == null) return;
+        wiki.ParentId = parentId;
+        wiki.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
     public async Task DeleteWikiAsync(string wikiId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
