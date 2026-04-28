@@ -138,16 +138,6 @@
                                        HorizontalContentAlignment="Left"
                                        Margin="0,1" Padding="12,8"
                                        Click="NavInstructions_Click" />
-                            <ui:Button x:Name="NavSettingsBtn"
-                                       Content="설정"
-                                       Icon="{ui:SymbolIcon Settings24}"
-                                       Appearance="Transparent"
-                                       Foreground="{DynamicResource PawSidebarText}"
-                                       FontFamily="{StaticResource PawFont}"
-                                       HorizontalAlignment="Stretch"
-                                       HorizontalContentAlignment="Left"
-                                       Margin="0,1" Padding="12,8"
-                                       Click="NavSettings_Click" />
                             <ui:Button x:Name="NavLlmBtn"
                                        Content="LLM"
                                        Icon="{ui:SymbolIcon Wand24}"
