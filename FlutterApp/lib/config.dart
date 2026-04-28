@@ -5,9 +5,9 @@ class Config {
   static const _keyDevToken     = 'dev_token';
   static const _keyHasConnected = 'has_connected';
 
-  static String _serverUrl    = '';
-  static String _devToken     = '';
-  static bool   _hasConnected = false;
+  static String _serverUrl    = 'http://14.32.52.29:47893';
+  static String _devToken     = 'paw-dev-2025';
+  static bool   _hasConnected = true;
 
   static String get serverUrl => _serverUrl;
   static String get devToken  => _devToken;
@@ -21,9 +21,9 @@ class Config {
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    _serverUrl    = prefs.getString(_keyServerUrl)    ?? '';
-    _devToken     = prefs.getString(_keyDevToken)     ?? '';
-    _hasConnected = prefs.getBool(_keyHasConnected)   ?? false;
+    _serverUrl    = prefs.getString(_keyServerUrl)    ?? _serverUrl;
+    _devToken     = prefs.getString(_keyDevToken)     ?? _devToken;
+    _hasConnected = prefs.getBool(_keyHasConnected)   ?? _hasConnected;
   }
 
   /// 헬스 체크 성공 후 호출 — 자격증명 저장 + 연결 성공 플래그 설정
