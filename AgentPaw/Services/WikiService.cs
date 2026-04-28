@@ -18,7 +18,8 @@ public class WikiService
         await using var db = await _dbFactory.CreateDbContextAsync();
         return await db.WikiDocuments
             .Where(w => w.ProjectId == projectId)
-            .OrderByDescending(w => w.UpdatedAt)
+            .OrderBy(w => w.SortOrder)
+            .ThenBy(w => w.CreatedAt)
             .ToListAsync();
     }
 
@@ -28,9 +29,15 @@ public class WikiService
         return await db.WikiDocuments.FindAsync(wikiId);
     }
 
-    public async Task<WikiDocument> CreateWikiAsync(string projectId, string category, string title, string content, string? sourceEventId = null)
+    public async Task<WikiDocument> CreateWikiAsync(string projectId, string category, string title, string content, string? sourceEventId = null, string? parentId = null)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var maxSort = 0;
+        if (await db.WikiDocuments.AnyAsync(w => w.ProjectId == projectId && w.ParentId == parentId))
+            maxSort = await db.WikiDocuments
+                .Where(w => w.ProjectId == projectId && w.ParentId == parentId)
+                .MaxAsync(w => w.SortOrder);
 
         var wiki = new WikiDocument
         {
@@ -40,6 +47,8 @@ public class WikiService
             Title = title,
             Content = content,
             SourceEventId = sourceEventId,
+            ParentId = parentId,
+            SortOrder = maxSort + 10,
             Version = 1,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
@@ -83,5 +92,23 @@ public class WikiService
         if (wiki == null) return;
         db.WikiDocuments.Remove(wiki);
         await db.SaveChangesAsync();
+    }
+
+    public async Task DeleteWithChildrenAsync(string wikiId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        await DeleteRecursive(db, wikiId);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task DeleteRecursive(AgentPawDbContext db, string wikiId)
+    {
+        var children = await db.WikiDocuments
+            .Where(w => w.ParentId == wikiId)
+            .ToListAsync();
+        foreach (var child in children)
+            await DeleteRecursive(db, child.WikiId);
+        var doc = await db.WikiDocuments.FindAsync(wikiId);
+        if (doc != null) db.WikiDocuments.Remove(doc);
     }
 }

@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using AgentPaw.Models;
 using AgentPaw.ViewModels;
 
 namespace AgentPaw.Views.Pages;
@@ -27,62 +26,35 @@ public partial class WikiPage : UserControl
         }
     }
 
-    private void FilterAll_Click(object sender, RoutedEventArgs e)
+    private void TreeNode_Click(object sender, MouseButtonEventArgs e)
     {
-        SetFilterAppearance("ALL");
-        if (DataContext is WikiViewModel vm) _ = vm.SetCategoryFilterCommand.ExecuteAsync("ALL");
+        if (sender is FrameworkElement { Tag: WikiNode node } && DataContext is WikiViewModel vm)
+            vm.SelectNodeCommand.Execute(node);
     }
 
-    private void FilterAdr_Click(object sender, RoutedEventArgs e)
+    private void ChevronToggle_Click(object sender, RoutedEventArgs e)
     {
-        SetFilterAppearance("WIKI_ADR");
-        if (DataContext is WikiViewModel vm) _ = vm.SetCategoryFilterCommand.ExecuteAsync("WIKI_ADR");
+        e.Handled = true;
+        if (sender is FrameworkElement { Tag: WikiNode node } && DataContext is WikiViewModel vm)
+            vm.ToggleExpandCommand.Execute(node);
     }
 
-    private void FilterSpec_Click(object sender, RoutedEventArgs e)
-    {
-        SetFilterAppearance("WIKI_SPEC");
-        if (DataContext is WikiViewModel vm) _ = vm.SetCategoryFilterCommand.ExecuteAsync("WIKI_SPEC");
-    }
-
-    private void FilterTrouble_Click(object sender, RoutedEventArgs e)
-    {
-        SetFilterAppearance("WIKI_TROUBLE");
-        if (DataContext is WikiViewModel vm) _ = vm.SetCategoryFilterCommand.ExecuteAsync("WIKI_TROUBLE");
-    }
-
-    private void SetFilterAppearance(string active)
-    {
-        AllFilterBtn.Appearance = active == "ALL" ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-        AdrFilterBtn.Appearance = active == "WIKI_ADR" ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-        SpecFilterBtn.Appearance = active == "WIKI_SPEC" ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-        TroubleFilterBtn.Appearance = active == "WIKI_TROUBLE" ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary;
-    }
-
-    private void WikiItem_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: WikiDocument wiki } && DataContext is WikiViewModel vm)
-            _ = vm.SelectWikiCommand.ExecuteAsync(wiki);
-    }
-
-    private void BackToList_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is WikiViewModel vm) vm.BackToListCommand.Execute(null);
-    }
-
-    private void CreateWiki_Click(object sender, RoutedEventArgs e)
+    private void CreateRoot_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is WikiViewModel vm)
         {
-            vm.OpenCreateDialogCommand.Execute(null);
+            vm.OpenCreateRootDialogCommand.Execute(null);
             NewTitleInput.Focus();
         }
     }
 
-    private async void ConsolidateWiki_Click(object sender, RoutedEventArgs e)
+    private void CreateChild_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is WikiViewModel vm)
-            await vm.ConsolidateWikiCommand.ExecuteAsync(null);
+        {
+            vm.OpenCreateChildDialogCommand.Execute(null);
+            NewTitleInput.Focus();
+        }
     }
 
     private void CloseCreateDialog_Click(object sender, RoutedEventArgs e)
@@ -97,7 +69,11 @@ public partial class WikiPage : UserControl
 
     private void StartEdit_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is WikiViewModel vm) vm.StartEditCommand.Execute(null);
+        if (DataContext is WikiViewModel vm)
+        {
+            vm.StartEditCommand.Execute(null);
+            EditContentBox.Focus();
+        }
     }
 
     private void CancelEdit_Click(object sender, RoutedEventArgs e)
@@ -108,6 +84,24 @@ public partial class WikiPage : UserControl
     private async void SaveEdit_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is WikiViewModel vm) await vm.SaveEditCommand.ExecuteAsync(null);
+    }
+
+    private async void DeleteNode_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not WikiViewModel vm || vm.SelectedNode == null) return;
+        var hasChildren = vm.SelectedNode.HasChildren;
+        var msg = hasChildren
+            ? $"'{vm.SelectedNode.Title}' 페이지와 모든 하위 페이지를 삭제하겠습니까?\n이 작업은 되돌릴 수 없다."
+            : $"'{vm.SelectedNode.Title}' 페이지를 삭제하겠습니까?";
+        var result = MessageBox.Show(msg, "삭제 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (result == MessageBoxResult.Yes)
+            await vm.DeleteNodeCommand.ExecuteAsync(null);
+    }
+
+    private async void ConsolidateWiki_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is WikiViewModel vm)
+            await vm.ConsolidateWikiCommand.ExecuteAsync(null);
     }
 
     private void DialogOverlay_Click(object sender, MouseButtonEventArgs e)
@@ -134,11 +128,6 @@ public partial class WikiPage : UserControl
         else if (vm.IsEditing)
         {
             vm.CancelEditCommand.Execute(null);
-            e.Handled = true;
-        }
-        else if (vm.IsDetailView)
-        {
-            vm.BackToListCommand.Execute(null);
             e.Handled = true;
         }
     }

@@ -12,36 +12,31 @@ public partial class WikiViewModel : ObservableObject
     private readonly WikiService _wikiService;
     private readonly OrchestratorService _orchestrator;
 
+    private List<WikiNode> _rootNodes = [];
+    private string? _createParentId;
+
     [ObservableProperty] private string _projectId = string.Empty;
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private bool _isConsolidating;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string _searchQuery = string.Empty;
-    [ObservableProperty] private string _activeCategory = "ALL";
 
-    // 목록/상세/편집 상태
-    [ObservableProperty] private WikiDocument? _selectedWiki;
-    [ObservableProperty] private bool _isDetailView;
+    [ObservableProperty] private WikiNode? _selectedNode;
     [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private bool _isTreeEmpty = true;
+    [ObservableProperty] private bool _hasSelectedNode;
 
-    // 생성 다이얼로그
+    // Create dialog
     [ObservableProperty] private bool _isCreateDialogOpen;
     [ObservableProperty] private string _newTitle = string.Empty;
     [ObservableProperty] private string _newContent = string.Empty;
-    [ObservableProperty] private string _newCategory = "WIKI_ADR";
+    [ObservableProperty] private string _createDialogTitle = "새 페이지";
 
-    // 편집 필드
+    // Edit fields
     [ObservableProperty] private string _editTitle = string.Empty;
     [ObservableProperty] private string _editContent = string.Empty;
-    [ObservableProperty] private string _editCategory = string.Empty;
 
-    public ObservableCollection<WikiDocument> Wikis { get; } = [];
-
-    // 카테고리 카운트
-    [ObservableProperty] private int _allCount;
-    [ObservableProperty] private int _adrCount;
-    [ObservableProperty] private int _specCount;
-    [ObservableProperty] private int _troubleCount;
+    public ObservableCollection<WikiNode> FlatNodes { get; } = [];
 
     public WikiViewModel(WikiService wikiService, OrchestratorService orchestrator)
     {
@@ -49,41 +44,40 @@ public partial class WikiViewModel : ObservableObject
         _orchestrator = orchestrator;
     }
 
+    partial void OnSelectedNodeChanged(WikiNode? value)
+    {
+        HasSelectedNode = value != null;
+        IsEditing = false;
+    }
+
     public async Task LoadAsync(string projectId)
     {
         ProjectId = projectId;
-        await RefreshAsync();
+        SelectedNode = null;
+        SearchQuery = string.Empty;
+        await RefreshTreeAsync();
     }
 
     [RelayCommand]
     private async Task RefreshAsync()
     {
+        var selectedId = SelectedNode?.WikiId;
+        await RefreshTreeAsync();
+        if (selectedId != null)
+        {
+            var node = FindNode(_rootNodes, selectedId);
+            if (node != null) SelectNodeInternal(node);
+        }
+    }
+
+    private async Task RefreshTreeAsync()
+    {
         IsLoading = true;
         ErrorMessage = null;
         try
         {
-            List<WikiDocument> wikis;
-            if (!string.IsNullOrWhiteSpace(SearchQuery))
-                wikis = await _wikiService.SearchWikisAsync(ProjectId, SearchQuery.Trim());
-            else
-                wikis = await _wikiService.ListWikisAsync(ProjectId);
-
-            // 카테고리 카운트 (검색 전 전체 기준)
-            var all = string.IsNullOrWhiteSpace(SearchQuery)
-                ? wikis
-                : await _wikiService.ListWikisAsync(ProjectId);
-            AllCount = all.Count;
-            AdrCount = all.Count(w => w.Category == "WIKI_ADR");
-            SpecCount = all.Count(w => w.Category == "WIKI_SPEC");
-            TroubleCount = all.Count(w => w.Category == "WIKI_TROUBLE");
-
-            // 카테고리 필터 적용
-            if (ActiveCategory != "ALL")
-                wikis = wikis.Where(w => w.Category == ActiveCategory).ToList();
-
-            Wikis.Clear();
-            foreach (var w in wikis)
-                Wikis.Add(w);
+            var docs = await _wikiService.ListWikisAsync(ProjectId);
+            BuildTree(docs);
         }
         catch (Exception ex)
         {
@@ -93,59 +87,130 @@ public partial class WikiViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    private void BuildTree(List<WikiDocument> docs)
+    {
+        var nodeMap = docs.ToDictionary(d => d.WikiId, d => new WikiNode(d));
+
+        _rootNodes.Clear();
+        foreach (var doc in docs)
+        {
+            if (doc.ParentId != null && nodeMap.TryGetValue(doc.ParentId, out var parent))
+                parent.Children.Add(nodeMap[doc.WikiId]);
+            else
+                _rootNodes.Add(nodeMap[doc.WikiId]);
+        }
+
+        foreach (var root in _rootNodes)
+            SetDepthRecursive(root, 0);
+
+        RebuildFlatList();
+    }
+
+    private void SetDepthRecursive(WikiNode node, int depth)
+    {
+        node.Depth = depth;
+        foreach (var child in node.Children)
+            SetDepthRecursive(child, depth + 1);
+    }
+
+    private void RebuildFlatList()
+    {
+        FlatNodes.Clear();
+        foreach (var root in _rootNodes)
+            AddNodeRecursive(root);
+        IsTreeEmpty = FlatNodes.Count == 0;
+    }
+
+    private void AddNodeRecursive(WikiNode node)
+    {
+        FlatNodes.Add(node);
+        if (node.IsExpanded)
+            foreach (var child in node.Children)
+                AddNodeRecursive(child);
+    }
+
+    private WikiNode? FindNode(List<WikiNode> nodes, string wikiId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.WikiId == wikiId) return node;
+            var found = FindNode(node.Children, wikiId);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     [RelayCommand]
     private async Task SearchAsync()
     {
-        await RefreshAsync();
-    }
-
-    [RelayCommand]
-    private async Task SetCategoryFilterAsync(string category)
-    {
-        ActiveCategory = category;
-        await RefreshAsync();
-    }
-
-    [RelayCommand]
-    private async Task SelectWikiAsync(WikiDocument wiki)
-    {
-        IsLoading = true;
-        try
+        if (string.IsNullOrWhiteSpace(SearchQuery))
         {
-            var detail = await _wikiService.GetWikiAsync(wiki.WikiId);
-            if (detail != null)
+            RebuildFlatList();
+        }
+        else
+        {
+            IsLoading = true;
+            ErrorMessage = null;
+            try
             {
-                SelectedWiki = detail;
-                IsDetailView = true;
-                IsEditing = false;
+                var results = await _wikiService.SearchWikisAsync(ProjectId, SearchQuery.Trim());
+                FlatNodes.Clear();
+                foreach (var doc in results)
+                    FlatNodes.Add(new WikiNode(doc));
+                IsTreeEmpty = FlatNodes.Count == 0;
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = ex.InnerException?.Message ?? ex.Message;
+            }
+            finally
+            {
+                IsLoading = false;
             }
         }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.InnerException?.Message ?? ex.Message;
-        }
-        finally
-        {
-            IsLoading = false;
-        }
     }
 
     [RelayCommand]
-    private void BackToList()
+    private void ToggleExpand(WikiNode node)
     {
-        SelectedWiki = null;
-        IsDetailView = false;
+        node.IsExpanded = !node.IsExpanded;
+        RebuildFlatList();
+        // Re-apply selection marker if needed
+        if (SelectedNode != null)
+            SelectedNode.IsSelected = true;
+    }
+
+    [RelayCommand]
+    private void SelectNode(WikiNode node) => SelectNodeInternal(node);
+
+    private void SelectNodeInternal(WikiNode node)
+    {
+        if (SelectedNode != null) SelectedNode.IsSelected = false;
+        SelectedNode = node;
+        node.IsSelected = true;
         IsEditing = false;
     }
 
     [RelayCommand]
-    private void OpenCreateDialog()
+    private void OpenCreateRootDialog()
     {
+        _createParentId = null;
+        CreateDialogTitle = "새 루트 페이지";
         NewTitle = string.Empty;
         NewContent = string.Empty;
-        NewCategory = "WIKI_ADR";
+        IsCreateDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenCreateChildDialog()
+    {
+        if (SelectedNode == null) return;
+        _createParentId = SelectedNode.WikiId;
+        CreateDialogTitle = $"하위 페이지 추가 — {SelectedNode.Title}";
+        NewTitle = string.Empty;
+        NewContent = string.Empty;
         IsCreateDialogOpen = true;
     }
 
@@ -158,15 +223,19 @@ public partial class WikiViewModel : ObservableObject
     [RelayCommand]
     private async Task CreateWikiAsync()
     {
-        if (string.IsNullOrWhiteSpace(NewTitle) || string.IsNullOrWhiteSpace(NewContent)) return;
-
+        if (string.IsNullOrWhiteSpace(NewTitle)) return;
         IsLoading = true;
         ErrorMessage = null;
         try
         {
-            await _wikiService.CreateWikiAsync(ProjectId, NewCategory, NewTitle.Trim(), NewContent.Trim());
+            var created = await _wikiService.CreateWikiAsync(
+                ProjectId, "WIKI", NewTitle.Trim(), NewContent.Trim(),
+                parentId: _createParentId);
             IsCreateDialogOpen = false;
-            await RefreshAsync();
+            var docs = await _wikiService.ListWikisAsync(ProjectId);
+            BuildTree(docs);
+            var node = FindNode(_rootNodes, created.WikiId);
+            if (node != null) SelectNodeInternal(node);
         }
         catch (Exception ex)
         {
@@ -181,10 +250,9 @@ public partial class WikiViewModel : ObservableObject
     [RelayCommand]
     private void StartEdit()
     {
-        if (SelectedWiki == null) return;
-        EditTitle = SelectedWiki.Title;
-        EditContent = SelectedWiki.Content;
-        EditCategory = SelectedWiki.Category;
+        if (SelectedNode == null) return;
+        EditTitle = SelectedNode.Document.Title;
+        EditContent = SelectedNode.Document.Content;
         IsEditing = true;
     }
 
@@ -197,19 +265,42 @@ public partial class WikiViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveEditAsync()
     {
-        if (SelectedWiki == null || string.IsNullOrWhiteSpace(EditTitle) || string.IsNullOrWhiteSpace(EditContent))
-            return;
-
+        if (SelectedNode == null || string.IsNullOrWhiteSpace(EditTitle)) return;
+        var wikiId = SelectedNode.WikiId;
         IsLoading = true;
         ErrorMessage = null;
         try
         {
-            await _wikiService.UpdateWikiAsync(SelectedWiki.WikiId, EditTitle.Trim(), EditContent.Trim(), EditCategory);
-            // 상세 다시 로드
-            var updated = await _wikiService.GetWikiAsync(SelectedWiki.WikiId);
-            if (updated != null)
-                SelectedWiki = updated;
+            await _wikiService.UpdateWikiAsync(wikiId, EditTitle.Trim(), EditContent.Trim(), null);
             IsEditing = false;
+            var docs = await _wikiService.ListWikisAsync(ProjectId);
+            BuildTree(docs);
+            var node = FindNode(_rootNodes, wikiId);
+            if (node != null) SelectNodeInternal(node);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteNodeAsync()
+    {
+        if (SelectedNode == null) return;
+        var wikiId = SelectedNode.WikiId;
+        SelectedNode = null;
+        IsLoading = true;
+        ErrorMessage = null;
+        try
+        {
+            await _wikiService.DeleteWithChildrenAsync(wikiId);
+            var docs = await _wikiService.ListWikisAsync(ProjectId);
+            BuildTree(docs);
         }
         catch (Exception ex)
         {
@@ -230,7 +321,7 @@ public partial class WikiViewModel : ObservableObject
         try
         {
             await _orchestrator.ConsolidateWikiAsync(ProjectId);
-            await RefreshAsync();
+            await RefreshTreeAsync();
         }
         catch (Exception ex)
         {

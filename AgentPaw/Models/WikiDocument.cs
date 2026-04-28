@@ -28,6 +28,12 @@ public class WikiDocument
     [Column("version")]
     public int Version { get; set; } = 1;
 
+    [Column("parent_id")]
+    public string? ParentId { get; set; }
+
+    [Column("sort_order")]
+    public int SortOrder { get; set; }
+
     [Column("created_at")]
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
