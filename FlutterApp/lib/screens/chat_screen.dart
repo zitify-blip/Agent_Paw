@@ -3,6 +3,7 @@ import '../api/client.dart';
 import '../api/models.dart';
 import '../widgets/message_bubble.dart';
 import 'personas_screen.dart';
+import 'model_settings_screen.dart';
 import 'project_settings_screen.dart';
 import 'wiki_list_screen.dart';
 import 'timeline_screen.dart';
@@ -242,12 +243,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         builder: (_) => TimelineScreen(
                             projectId: widget.project.projectId)),
                   );
-                case 'settings':
+                case 'env_settings':
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => ProjectSettingsScreen(
                             project: widget.project)),
+                  );
+                case 'model_settings':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => ModelSettingsScreen(
+                            projectId: widget.project.projectId)),
                   );
               }
             },
@@ -256,7 +264,8 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'wiki', child: Text('위키')),
               PopupMenuItem(value: 'timeline', child: Text('타임라인')),
               PopupMenuDivider(),
-              PopupMenuItem(value: 'settings', child: Text('프로젝트 설정')),
+              PopupMenuItem(value: 'env_settings', child: Text('환경 설정')),
+              PopupMenuItem(value: 'model_settings', child: Text('모델 설정')),
             ],
           ),
         ],

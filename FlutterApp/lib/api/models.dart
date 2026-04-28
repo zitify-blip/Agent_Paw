@@ -159,6 +159,9 @@ class Persona {
   final String? color;
   final bool isPm;
   final String? primaryModel;
+  final String? fallbackModel;
+  final double temperature;
+  final int maxTokens;
 
   const Persona({
     required this.personaId,
@@ -170,6 +173,9 @@ class Persona {
     this.color,
     required this.isPm,
     this.primaryModel,
+    this.fallbackModel,
+    this.temperature = 0.7,
+    this.maxTokens = 4096,
   });
 
   factory Persona.fromJson(Map<String, dynamic> json) => Persona(
@@ -182,6 +188,9 @@ class Persona {
         color: json['color'] as String?,
         isPm: json['isPm'] as bool? ?? false,
         primaryModel: json['primaryModel'] as String?,
+        fallbackModel: json['fallbackModel'] as String?,
+        temperature: (json['temperature'] as num?)?.toDouble() ?? 0.7,
+        maxTokens: json['maxTokens'] as int? ?? 4096,
       );
 }
 

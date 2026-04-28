@@ -192,6 +192,24 @@ class ApiClient {
         .toList();
   }
 
+  static Future<void> updatePersonaModel(
+    String projectId,
+    String personaId, {
+    String? primaryModel,
+    String? fallbackModel,
+    bool clearFallback = false,
+    double? temperature,
+    int? maxTokens,
+  }) async {
+    await _patch('/m/projects/$projectId/personas/$personaId/model', {
+      if (primaryModel != null) 'primaryModel': primaryModel,
+      if (clearFallback) 'fallbackModel': null
+      else if (fallbackModel != null) 'fallbackModel': fallbackModel,
+      if (temperature != null) 'temperature': temperature,
+      if (maxTokens != null) 'maxTokens': maxTokens,
+    });
+  }
+
   static Future<List<WikiDocument>> getWikiList(String projectId) async {
     final json = await _get('/m/projects/$projectId/wiki');
     return (json as List<dynamic>)

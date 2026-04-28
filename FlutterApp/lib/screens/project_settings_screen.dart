@@ -62,7 +62,7 @@ class _ProjectSettingsScreenState extends State<ProjectSettingsScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('프로젝트 설정'),
+        title: const Text('환경 설정'),
         actions: [
           if (_saving)
             const Padding(

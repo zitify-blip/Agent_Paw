@@ -215,6 +215,10 @@ public class MobileApiService
                 if (sub == "messages" && method == "GET")    { await HandleMessagesAsync(stream, req, projectId); return; }
                 if (sub == "chat" && method == "POST")      { await HandleChatAsync(stream, req, projectId); return; }
                 if (sub == "personas" && method == "GET")   { await HandlePersonasAsync(stream, projectId); return; }
+                if (sub == "personas" && segs.Length >= 6 && segs[5] == "model" && method == "PATCH")
+                {
+                    await HandlePatchPersonaModelAsync(stream, req, projectId, segs[4]); return;
+                }
                 if (sub == "timeline" && method == "GET")   { await HandleTimelineAsync(stream, req, projectId); return; }
                 if (sub == "wiki" && method == "GET")
                 {
@@ -425,16 +429,59 @@ public class MobileApiService
         var personas = await _configLoader.ListPersonasAsync(projectId);
         await WriteJsonAsync(stream, 200, personas.Select(p => new
         {
-            personaId    = p.PersonaId,
-            name         = p.Name,
-            label        = p.Label,
-            description  = p.Description,
-            avatar       = p.Avatar,
-            icon         = p.Icon,
-            color        = p.Color,
-            isPm         = p.IsPm,
-            primaryModel = p.PrimaryModel
+            personaId     = p.PersonaId,
+            name          = p.Name,
+            label         = p.Label,
+            description   = p.Description,
+            avatar        = p.Avatar,
+            icon          = p.Icon,
+            color         = p.Color,
+            isPm          = p.IsPm,
+            primaryModel  = p.PrimaryModel,
+            fallbackModel = p.FallbackModel,
+            temperature   = p.Temperature,
+            maxTokens     = p.MaxTokens
         }));
+    }
+
+    private async Task HandlePatchPersonaModelAsync(
+        NetworkStream stream, HttpReq req, string projectId, string personaId)
+    {
+        var text = Encoding.UTF8.GetString(req.Body);
+        using var doc = JsonDocument.Parse(text.Length > 0 ? text : "{}");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var persona = await db.Personas.FindAsync(personaId);
+        if (persona == null) { await WriteJsonAsync(stream, 404, new { error = "Persona not found" }); return; }
+
+        if (doc.RootElement.TryGetProperty("primaryModel", out var pm) && pm.ValueKind == JsonValueKind.String)
+        {
+            var v = pm.GetString()?.Trim();
+            if (!string.IsNullOrEmpty(v)) persona.PrimaryModel = v;
+        }
+        if (doc.RootElement.TryGetProperty("fallbackModel", out var fm))
+            persona.FallbackModel = fm.ValueKind == JsonValueKind.String ? fm.GetString()?.Trim() : null;
+
+        if (doc.RootElement.TryGetProperty("temperature", out var t) && t.ValueKind == JsonValueKind.Number)
+            persona.Temperature = Math.Clamp((float)t.GetDouble(), 0f, 1f);
+
+        if (doc.RootElement.TryGetProperty("maxTokens", out var mt) && mt.ValueKind == JsonValueKind.Number)
+            persona.MaxTokens = Math.Clamp(mt.GetInt32(), 256, 32768);
+
+        persona.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        // 캐시 즉시 무효화 — 다음 대화부터 새 모델이 사용된다
+        _configLoader.InvalidateAll();
+
+        await WriteJsonAsync(stream, 200, new
+        {
+            personaId     = persona.PersonaId,
+            primaryModel  = persona.PrimaryModel,
+            fallbackModel = persona.FallbackModel,
+            temperature   = persona.Temperature,
+            maxTokens     = persona.MaxTokens
+        });
     }
 
     private async Task HandleWikiListAsync(NetworkStream stream, string projectId)
