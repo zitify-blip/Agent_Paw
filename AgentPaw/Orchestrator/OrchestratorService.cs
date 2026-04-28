@@ -514,125 +514,142 @@ public class OrchestratorService
     {
         var discussionId = Guid.NewGuid().ToString("N")[..8];
         int speakerCounter = 0;
+        int maxTurns = rounds * participants.Count;
 
-        for (int round = 0; round < rounds; round++)
+        // 각 참여자가 마지막으로 발언한 턴 인덱스 (-1 = 미발언)
+        var lastSpoke = participants.ToDictionary(p => p.PersonaId, _ => -1);
+        var currentSpeaker = participants[0];
+        // 조기 종료용 슬라이딩 윈도우 — 참여자 수만큼 최근 stance 추적
+        var stanceWindow = new Queue<string>();
+
+        for (int turn = 0; turn < maxTurns; turn++)
         {
-            var roundStances = new List<string>();
+            var speaker = currentSpeaker;
+            var roundIndex = turn / participants.Count;
+            var config = await _configLoader.GetPersonaConfigAsync(speaker.PersonaId, input.ProjectId);
+            var addendum = BuildDiscussionSpeakerAddendum(
+                topic, stanceHint, participants, config.Name, roundIndex, rounds, isFreeMode);
+            var systemPrompt = string.IsNullOrWhiteSpace(addendum)
+                ? config.SystemPrompt
+                : config.SystemPrompt + "\n\n" + addendum;
 
-            for (int si = 0; si < participants.Count; si++)
+            var userPrompt = BuildDiscussionSpeakerPrompt(
+                input.Message, topic, history, discussionId);
+
+            var streamKey = $"{runId}-d-{discussionId}-t{turn}";
+            var streamBuffer = new StringBuilder();
+            long lastEmitTicks = 0L;
+            const long EmitIntervalTicks = TimeSpan.TicksPerMillisecond * 33;
+
+            void EmitPreview(bool force)
             {
-                var speaker = participants[si];
-                var config = await _configLoader.GetPersonaConfigAsync(speaker.PersonaId, input.ProjectId);
-                var addendum = BuildDiscussionSpeakerAddendum(
-                    topic, stanceHint, participants, config.Name, round, rounds, isFreeMode);
-                var systemPrompt = string.IsNullOrWhiteSpace(addendum)
-                    ? config.SystemPrompt
-                    : config.SystemPrompt + "\n\n" + addendum;
+                if (progress == null) return;
+                var nowTicks = DateTime.UtcNow.Ticks;
+                if (!force && nowTicks - lastEmitTicks < EmitIntervalTicks) return;
+                lastEmitTicks = nowTicks;
 
-                var userPrompt = BuildDiscussionSpeakerPrompt(
-                    input.Message, topic, history, discussionId);
-
-                var streamKey = $"{runId}-d-{discussionId}-r{round}-s{si}";
-                var streamBuffer = new StringBuilder();
-                long lastEmitTicks = 0L;
-                const long EmitIntervalTicks = TimeSpan.TicksPerMillisecond * 33;
-
-                void EmitPreview(bool force)
+                progress.Report(new AgentTurn
                 {
-                    if (progress == null) return;
-                    var nowTicks = DateTime.UtcNow.Ticks;
-                    if (!force && nowTicks - lastEmitTicks < EmitIntervalTicks) return;
-                    lastEmitTicks = nowTicks;
-
-                    progress.Report(new AgentTurn
-                    {
-                        TurnIndex = history.Count,
-                        PersonaId = config.PersonaId,
-                        PersonaName = config.Name,
-                        PersonaLabel = config.Label,
-                        PersonaAvatar = config.Avatar,
-                        IsPm = false,
-                        Content = CleanStreamingPreview(streamBuffer.ToString()),
-                        ModelUsed = string.Empty,
-                        StreamKey = streamKey,
-                        IsStreamingPreview = true,
-                        DiscussionId = discussionId,
-                        RoundIndex = round,
-                        SpeakerOrder = speakerCounter,
-                        IsDiscussionSpeaker = true,
-                        DiscussionTopic = topic
-                    });
-                }
-
-                // 토론 화자도 동일 — 첫 토큰 전 빈 버블을 먼저 띄운다
-                EmitPreview(force: true);
-
-                var response = await _aiClient.ChatWithFallbackStreamAsync(
-                    config.PrimaryModel,
-                    config.FallbackModel,
-                    systemPrompt,
-                    userPrompt,
-                    config.Temperature,
-                    config.MaxTokens,
-                    onDelta: chunk =>
-                    {
-                        streamBuffer.Append(chunk);
-                        EmitPreview(force: false);
-                    },
-                    history: round == 0 ? input.PriorConversation : null,
-                    ct: ct);
-
-                var stance = DiscussionBlockParser.ParseStance(response.Content);
-                var afterStance = stance.CleanedContent;
-
-                // 토론 중에도 wiki_save 블록을 발신할 수 있다 — 쟁점 정리나 합의 사항을 즉시 위키로 승격한다
-                var dEventId = Guid.NewGuid().ToString();
-                var dWikiParse = WikiSaveParser.Parse(afterStance);
-                afterStance = dWikiParse.CleanedContent;
-                foreach (var block in dWikiParse.Saves)
-                {
-                    try
-                    {
-                        await _wiki.CreateWikiAsync(
-                            input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: dEventId);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"[WikiSave] FAILED: {ex.GetType().Name}: {ex.Message}");
-                    }
-                }
-
-                var content = afterStance;
-                if (string.IsNullOrWhiteSpace(content)) content = "(응답 없음)";
-
-                var turn = new AgentTurn
-                {
-                    EventId = dEventId,
                     TurnIndex = history.Count,
                     PersonaId = config.PersonaId,
                     PersonaName = config.Name,
                     PersonaLabel = config.Label,
                     PersonaAvatar = config.Avatar,
                     IsPm = false,
-                    Content = content,
-                    ModelUsed = response.ModelUsed,
-                    DiscussionId = discussionId,
-                    RoundIndex = round,
-                    SpeakerOrder = speakerCounter++,
-                    Stance = stance.HasStance ? stance.Position : "extend",
-                    IsDiscussionSpeaker = true,
-                    DiscussionTopic = topic,
+                    Content = CleanStreamingPreview(streamBuffer.ToString()),
+                    ModelUsed = string.Empty,
                     StreamKey = streamKey,
-                    IsStreamingPreview = false
-                };
-                history.Add(turn);
-                progress?.Report(turn);
-                roundStances.Add(turn.Stance!);
+                    IsStreamingPreview = true,
+                    DiscussionId = discussionId,
+                    RoundIndex = roundIndex,
+                    SpeakerOrder = speakerCounter,
+                    IsDiscussionSpeaker = true,
+                    DiscussionTopic = topic
+                });
             }
 
-            // 조기 종료: 라운드 내 모든 발언자가 agree로 일치
-            if (roundStances.Count > 0 && roundStances.All(s => s == "agree"))
+            // 토론 화자도 동일 — 첫 토큰 전 빈 버블을 먼저 띄운다
+            EmitPreview(force: true);
+
+            var response = await _aiClient.ChatWithFallbackStreamAsync(
+                config.PrimaryModel,
+                config.FallbackModel,
+                systemPrompt,
+                userPrompt,
+                config.Temperature,
+                config.MaxTokens,
+                onDelta: chunk =>
+                {
+                    streamBuffer.Append(chunk);
+                    EmitPreview(force: false);
+                },
+                history: turn == 0 ? input.PriorConversation : null,
+                ct: ct);
+
+            var stance = DiscussionBlockParser.ParseStance(response.Content);
+            var afterStance = stance.CleanedContent;
+
+            // 토론 중에도 wiki_save 블록을 발신할 수 있다 — 쟁점 정리나 합의 사항을 즉시 위키로 승격한다
+            var dEventId = Guid.NewGuid().ToString();
+            var dWikiParse = WikiSaveParser.Parse(afterStance);
+            afterStance = dWikiParse.CleanedContent;
+            foreach (var block in dWikiParse.Saves)
+            {
+                try
+                {
+                    await _wiki.CreateWikiAsync(
+                        input.ProjectId, block.Category, block.Title, block.Content, sourceEventId: dEventId);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[WikiSave] FAILED: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            var content = afterStance;
+            if (string.IsNullOrWhiteSpace(content)) content = "(응답 없음)";
+
+            var agentTurn = new AgentTurn
+            {
+                EventId = dEventId,
+                TurnIndex = history.Count,
+                PersonaId = config.PersonaId,
+                PersonaName = config.Name,
+                PersonaLabel = config.Label,
+                PersonaAvatar = config.Avatar,
+                IsPm = false,
+                Content = content,
+                ModelUsed = response.ModelUsed,
+                DiscussionId = discussionId,
+                RoundIndex = roundIndex,
+                SpeakerOrder = speakerCounter++,
+                Stance = stance.HasStance ? stance.Position : "extend",
+                IsDiscussionSpeaker = true,
+                DiscussionTopic = topic,
+                StreamKey = streamKey,
+                IsStreamingPreview = false
+            };
+            history.Add(agentTurn);
+            progress?.Report(agentTurn);
+            lastSpoke[speaker.PersonaId] = turn;
+
+            // 슬라이딩 윈도우 조기 종료: 최근 N 발언이 모두 agree면 합의 완료
+            stanceWindow.Enqueue(agentTurn.Stance!);
+            if (stanceWindow.Count > participants.Count) stanceWindow.Dequeue();
+            if (stanceWindow.Count == participants.Count && stanceWindow.All(s => s == "agree"))
                 break;
+
+            // 다음 화자 결정: 현재 화자가 next_speaker 지명 → 없으면 가장 오래 발언 안 한 참여자
+            Persona? next = null;
+            if (stance.HasStance && !string.IsNullOrWhiteSpace(stance.NextSpeaker))
+            {
+                next = participants.FirstOrDefault(p =>
+                    string.Equals(p.Name, stance.NextSpeaker, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(p.Label, stance.NextSpeaker, StringComparison.OrdinalIgnoreCase));
+            }
+            if (next == null)
+                next = participants.OrderBy(p => lastSpoke[p.PersonaId]).First();
+            currentSpeaker = next;
         }
 
         return RenderDiscussionTranscript(history, discussionId, topic);
@@ -662,11 +679,12 @@ public class OrchestratorService
         sb.AppendLine("응답 형식:");
         sb.AppendLine("  <본문: 너의 주장·근거·동료 발언에 대한 반응>");
         sb.AppendLine("```stance");
-        sb.AppendLine("{\"position\": \"agree|object|extend\", \"argument\": \"<한 줄 요지>\"}");
+        sb.AppendLine("{\"position\": \"agree|object|extend\", \"argument\": \"<한 줄 요지>\", \"next_speaker\": \"<다음에 발언할 팀원 이름 — 생략 시 자동 선택>\"}");
         sb.AppendLine("```");
         sb.AppendLine("- agree: 직전 합의안에 이견 없음");
         sb.AppendLine("- object: 명시적 반대 (반대 근거는 본문에)");
         sb.AppendLine("- extend: 보완·추가 조건 제시");
+        sb.AppendLine("- next_speaker: 핑퐁 가능 — 같은 팀원을 다시 지명하거나 연속 발언도 허용됨");
         return sb.ToString().TrimEnd();
     }
 

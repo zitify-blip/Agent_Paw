@@ -113,6 +113,7 @@ public static class DiscussionBlockParser
                 HasStance = true,
                 Position = pos,
                 Argument = payload?.Argument?.Trim() ?? string.Empty,
+                NextSpeaker = payload?.NextSpeaker?.Trim() ?? string.Empty,
                 CleanedContent = StancePattern.Replace(content, "").Trim()
             };
         }
@@ -153,6 +154,7 @@ public static class DiscussionBlockParser
     {
         public string? Position { get; set; }
         public string? Argument { get; set; }
+        public string? NextSpeaker { get; set; }
     }
 }
 
@@ -180,5 +182,6 @@ public class StanceResult
     public bool HasStance { get; set; }
     public string Position { get; set; } = "extend";
     public string Argument { get; set; } = string.Empty;
+    public string NextSpeaker { get; set; } = string.Empty;
     public string CleanedContent { get; set; } = string.Empty;
 }
