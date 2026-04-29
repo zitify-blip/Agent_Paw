@@ -172,6 +172,19 @@ public class DevAgentService
                 return text.Length > 0 ? new DevStreamEvent("assistant", text, null, null) : null;
             }
 
+            if (type == "user")
+            {
+                // tool_result 이벤트 감지 → 도구 실행 완료 신호
+                if (!root.TryGetProperty("message", out var userMsg)) return null;
+                if (!userMsg.TryGetProperty("content", out var userContent)) return null;
+                foreach (var item in userContent.EnumerateArray())
+                {
+                    if (item.TryGetProperty("type", out var t) && t.GetString() == "tool_result")
+                        return new DevStreamEvent("tool_done", null, null, null);
+                }
+                return null;
+            }
+
             if (type == "result")
                 return new DevStreamEvent("result", null, null, null);
 

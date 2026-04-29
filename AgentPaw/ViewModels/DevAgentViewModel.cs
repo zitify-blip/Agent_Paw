@@ -60,6 +60,7 @@ public partial class DevAgentViewModel : ObservableObject
     private string _currentProjectId = "";
     private CancellationTokenSource? _cts;
     private bool _hasSession;
+    private string _accumulated = "";
 
     public ObservableCollection<DevAgentMessage> Messages { get; } = [];
     public ObservableCollection<DevProjectRecord> DevProjects { get; } = [];
@@ -204,6 +205,7 @@ public partial class DevAgentViewModel : ObservableObject
 
         Messages.Add(new DevAgentMessage { Role = "user", Content = prompt });
 
+        _accumulated = "";
         var assistantMsg = new DevAgentMessage { Role = "assistant", Content = "", IsStreaming = true };
         Messages.Add(assistantMsg);
 
@@ -255,10 +257,21 @@ public partial class DevAgentViewModel : ObservableObject
         }
     }
 
-    private static void HandleEvent(DevStreamEvent evt, DevAgentMessage msg)
+    private void HandleEvent(DevStreamEvent evt, DevAgentMessage msg)
     {
         if (evt.Type == "assistant" && evt.Text != null)
-            msg.Content = evt.Text;
+        {
+            // 턴마다 새 텍스트가 오면 누적 — 이전 턴 내용이 덮어써지지 않도록
+            _accumulated = string.IsNullOrEmpty(_accumulated)
+                ? evt.Text
+                : _accumulated + "\n\n" + evt.Text;
+            msg.Content = _accumulated;
+        }
+        else if (evt.Type == "tool_done")
+        {
+            // 도구 실행 완료 시 파일 트리 즉시 갱신 (생성된 파일 즉시 반영)
+            RefreshProjectList();
+        }
     }
 
     private bool CanSend() => !IsRunning && !string.IsNullOrWhiteSpace(InputText);
