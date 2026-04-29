@@ -1742,6 +1742,10 @@ public class OrchestratorService
         progress?.Report("기존 위키 목록 불러오는 중...");
         var existingDocs = await _wiki.ListWikisAsync(projectId);
 
+        // 기존 트리의 뎁스 정보 계산
+        var depthMap = BuildWikiDepthMap(existingDocs);
+        int totalDepths = depthMap.Count > 0 ? depthMap.Values.Max() + 1 : 1;
+
         if (events.Count == 0 && existingDocs.Count == 0) return [];
 
         // Build conversation transcript
@@ -1847,7 +1851,7 @@ Rules:
             userContent.AppendLine(transcriptSb.ToString());
         }
 
-        progress?.Report("AI가 지식을 분석하는 중...");
+        progress?.Report($"AI가 지식을 분석하는 중... (총 {totalDepths}뎁스)");
         var responseContent = await _aiClient.ChatWithFastModelAsync(
             systemPrompt, userContent.ToString(), maxTokens: 4096
         );
@@ -1862,31 +1866,48 @@ Rules:
             using var jdoc = JsonDocument.Parse(text);
             var root = jdoc.RootElement;
 
-            progress?.Report("위키 문서에 반영하는 중...");
-            // 1. Merges — update existing docs with deduplicated/merged content
+            // 1. Merges — 뎁스 순으로 수집 후 깊이별 progress 보고
             if (root.TryGetProperty("merges", out var merges))
             {
+                // 한 번 열거해 리스트로 수집 (뎁스별 정렬을 위해)
+                var mergeOps = new List<(int Depth, string WikiId, string? Title, string? Content)>();
                 foreach (var item in merges.EnumerateArray())
                 {
                     var wikiId  = item.TryGetProperty("wikiId",  out var wi) ? wi.GetString() : null;
                     var title   = item.TryGetProperty("title",   out var ti) ? ti.GetString() : null;
                     var content = item.TryGetProperty("content", out var ci) ? ci.GetString() : null;
                     if (string.IsNullOrWhiteSpace(wikiId)) continue;
-                    var existing = existingDocs.FirstOrDefault(d => d.WikiId == wikiId);
-                    if (existing == null) continue;
-                    await _wiki.UpdateWikiAsync(wikiId, title, content, null);
-                    if (title != null) existing.Title = title;
-                    if (content != null) existing.Content = content;
-                    modified.Add(existing);
+                    if (existingDocs.All(doc => doc.WikiId != wikiId)) continue;
+                    var depthVal = depthMap.TryGetValue(wikiId, out var dv) ? dv : 0;
+                    mergeOps.Add((depthVal, wikiId, title, content));
+                }
+
+                for (int d = 0; d < totalDepths; d++)
+                {
+                    var opsAtDepth = mergeOps.Where(m => m.Depth == d).ToList();
+                    if (opsAtDepth.Count == 0) continue;
+                    progress?.Report($"기존 문서 병합 중 ({d + 1}/{totalDepths}뎁스)...");
+                    foreach (var (_, wikiId, title, content) in opsAtDepth)
+                    {
+                        var existing = existingDocs.FirstOrDefault(doc => doc.WikiId == wikiId);
+                        if (existing == null) continue;
+                        await _wiki.UpdateWikiAsync(wikiId, title, content, null);
+                        if (title != null) existing.Title = title;
+                        if (content != null) existing.Content = content;
+                        modified.Add(existing);
+                    }
                 }
             }
 
-            // 2. Creates — new pages; parentRef may be tempId or existing wikiId
+            // 2. Creates — 새 페이지 (parentRef가 tempId 또는 기존 wikiId)
             var tempIdMap = new Dictionary<string, string>(); // tempId → real wikiId
             if (root.TryGetProperty("creates", out var creates))
             {
-                foreach (var item in creates.EnumerateArray())
+                var createList = creates.EnumerateArray().ToList();
+                int createIdx = 0;
+                foreach (var item in createList)
                 {
+                    createIdx++;
                     var tempId    = item.TryGetProperty("tempId",    out var ti) ? ti.GetString() ?? "" : "";
                     var title     = item.TryGetProperty("title",     out var t)  ? t.GetString()  ?? "" : "";
                     var content   = item.TryGetProperty("content",   out var c)  ? c.GetString()  ?? "" : "";
@@ -1894,12 +1915,14 @@ Rules:
                                         ? pr.GetString() : null;
                     if (string.IsNullOrWhiteSpace(title)) continue;
 
+                    progress?.Report($"새 문서 생성 중 ({createIdx}/{createList.Count})...");
+
                     string? resolvedParentId = null;
                     if (!string.IsNullOrWhiteSpace(parentRef))
                     {
                         if (tempIdMap.TryGetValue(parentRef, out var mapped))
                             resolvedParentId = mapped;
-                        else if (existingDocs.Any(d => d.WikiId == parentRef))
+                        else if (existingDocs.Any(doc => doc.WikiId == parentRef))
                             resolvedParentId = parentRef;
                     }
 
@@ -1909,23 +1932,28 @@ Rules:
                 }
             }
 
-            // 3. Reparents — reorganize existing docs' hierarchy
+            // 3. Reparents — 계층 재배치
             if (root.TryGetProperty("reparents", out var reparents))
             {
-                foreach (var item in reparents.EnumerateArray())
+                var reparentList = reparents.EnumerateArray().ToList();
+                int reparentIdx = 0;
+                foreach (var item in reparentList)
                 {
+                    reparentIdx++;
                     var wikiId       = item.TryGetProperty("wikiId",       out var wi)  ? wi.GetString()  : null;
                     var newParentRef = item.TryGetProperty("newParentRef",  out var npr) && npr.ValueKind != JsonValueKind.Null
                                            ? npr.GetString() : null;
                     if (string.IsNullOrWhiteSpace(wikiId)) continue;
-                    if (!existingDocs.Any(d => d.WikiId == wikiId)) continue;
+                    if (existingDocs.All(doc => doc.WikiId != wikiId)) continue;
+
+                    progress?.Report($"계층 재배치 중 ({reparentIdx}/{reparentList.Count})...");
 
                     string? resolvedParentId = null;
                     if (!string.IsNullOrWhiteSpace(newParentRef))
                     {
                         if (tempIdMap.TryGetValue(newParentRef, out var mapped))
                             resolvedParentId = mapped;
-                        else if (existingDocs.Any(d => d.WikiId == newParentRef))
+                        else if (existingDocs.Any(doc => doc.WikiId == newParentRef))
                             resolvedParentId = newParentRef;
                     }
 
@@ -1936,6 +1964,31 @@ Rules:
         catch { }
 
         return modified;
+    }
+
+    private static Dictionary<string, int> BuildWikiDepthMap(List<WikiDocument> docs)
+    {
+        var parentLookup = docs.ToDictionary(d => d.WikiId, d => d.ParentId);
+        var depthMap = new Dictionary<string, int>(docs.Count);
+
+        int GetDepth(string id, int guard = 0)
+        {
+            if (guard > 64) return 0;
+            if (depthMap.TryGetValue(id, out var cached)) return cached;
+            if (!parentLookup.TryGetValue(id, out var parentId) || parentId == null)
+            {
+                depthMap[id] = 0;
+                return 0;
+            }
+            var depth = GetDepth(parentId, guard + 1) + 1;
+            depthMap[id] = depth;
+            return depth;
+        }
+
+        foreach (var doc in docs)
+            GetDepth(doc.WikiId);
+
+        return depthMap;
     }
 }
 
