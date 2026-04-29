@@ -18,6 +18,7 @@ public partial class WikiViewModel : ObservableObject
     [ObservableProperty] private string _projectId = string.Empty;
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private bool _isConsolidating;
+    [ObservableProperty] private string _consolidationStatus = string.Empty;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string _searchQuery = string.Empty;
 
@@ -317,10 +318,13 @@ public partial class WikiViewModel : ObservableObject
     {
         if (IsConsolidating) return;
         IsConsolidating = true;
+        ConsolidationStatus = "준비 중...";
         ErrorMessage = null;
         try
         {
-            await _orchestrator.ConsolidateWikiAsync(ProjectId);
+            var progress = new Progress<string>(s => ConsolidationStatus = s);
+            await _orchestrator.ConsolidateWikiAsync(ProjectId, progress);
+            ConsolidationStatus = "위키 트리 갱신 중...";
             await RefreshTreeAsync();
         }
         catch (Exception ex)
@@ -330,6 +334,7 @@ public partial class WikiViewModel : ObservableObject
         finally
         {
             IsConsolidating = false;
+            ConsolidationStatus = string.Empty;
         }
     }
 }

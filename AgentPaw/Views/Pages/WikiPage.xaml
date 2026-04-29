@@ -375,6 +375,55 @@
         </Grid>
 
         <!-- ══════════════════════════════════════════
+             Consolidation progress overlay (full-grid)
+        ══════════════════════════════════════════ -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2"
+                Panel.ZIndex="15"
+                Background="#C0F5F0E8"
+                Visibility="{Binding IsConsolidating, Converter={StaticResource BoolToVisConverter}, FallbackValue=Collapsed}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Width="280">
+                <!-- Icon -->
+                <Border Width="56" Height="56" CornerRadius="28"
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,16">
+                    <Border.Background>
+                        <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.15" />
+                    </Border.Background>
+                    <ui:ProgressRing Width="32" Height="32"
+                                     IsIndeterminate="True"
+                                     Foreground="{DynamicResource PawGold}"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center" />
+                </Border>
+
+                <!-- Title -->
+                <TextBlock Text="위키 정리 중"
+                           FontSize="15" FontWeight="SemiBold"
+                           FontFamily="{StaticResource PawFont}"
+                           Foreground="{DynamicResource PawTextPrimary}"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,8" />
+
+                <!-- Status text -->
+                <TextBlock Text="{Binding ConsolidationStatus}"
+                           FontSize="12"
+                           FontFamily="{StaticResource PawFont}"
+                           Foreground="{DynamicResource PawTextSecondary}"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           Margin="0,0,0,16" />
+
+                <!-- Progress bar (indeterminate) -->
+                <ProgressBar IsIndeterminate="True"
+                             Height="3"
+                             Foreground="{DynamicResource PawGold}"
+                             Background="Transparent"
+                             BorderThickness="0" />
+            </StackPanel>
+        </Border>
+
+        <!-- ══════════════════════════════════════════
              Create Page Dialog (full-grid overlay)
         ══════════════════════════════════════════ -->
         <Border Grid.Column="0" Grid.ColumnSpan="2"

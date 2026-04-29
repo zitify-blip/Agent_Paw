@@ -1724,9 +1724,10 @@ public class OrchestratorService
         return await _aiClient.ChatWithFastModelAsync(config.SystemPrompt, userMsg, maxTokens: 2048, ct);
     }
 
-    public async Task<List<WikiDocument>> ConsolidateWikiAsync(string projectId)
+    public async Task<List<WikiDocument>> ConsolidateWikiAsync(string projectId, IProgress<string>? progress = null)
     {
         // Load last 200 conversation events
+        progress?.Report("대화 기록 불러오는 중...");
         await using var db = await _dbFactory.CreateDbContextAsync();
         var events = await db.EventLogs.AsNoTracking()
             .Where(e => e.ProjectId == projectId && !e.IsDeleted
@@ -1738,6 +1739,7 @@ public class OrchestratorService
             .ToListAsync();
 
         // Load existing wiki documents
+        progress?.Report("기존 위키 목록 불러오는 중...");
         var existingDocs = await _wiki.ListWikisAsync(projectId);
 
         if (events.Count == 0 && existingDocs.Count == 0) return [];
@@ -1845,6 +1847,7 @@ Rules:
             userContent.AppendLine(transcriptSb.ToString());
         }
 
+        progress?.Report("AI가 지식을 분석하는 중...");
         var responseContent = await _aiClient.ChatWithFastModelAsync(
             systemPrompt, userContent.ToString(), maxTokens: 4096
         );
@@ -1859,6 +1862,7 @@ Rules:
             using var jdoc = JsonDocument.Parse(text);
             var root = jdoc.RootElement;
 
+            progress?.Report("위키 문서에 반영하는 중...");
             // 1. Merges — update existing docs with deduplicated/merged content
             if (root.TryGetProperty("merges", out var merges))
             {
