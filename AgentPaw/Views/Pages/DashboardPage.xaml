@@ -200,12 +200,16 @@
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                                     HorizontalAlignment="Right" VerticalAlignment="Top">
                                             <!-- 채팅 중 배지 -->
-                                            <Border Background="#1A22C55E"
-                                                    BorderBrush="#4422C55E"
-                                                    BorderThickness="1"
+                                            <Border BorderThickness="1"
                                                     CornerRadius="4"
                                                     Padding="6,2"
                                                     Margin="0,0,4,0">
+                                                <Border.Background>
+                                                    <SolidColorBrush Color="{StaticResource PawSystemGreenColor}" Opacity="0.1" />
+                                                </Border.Background>
+                                                <Border.BorderBrush>
+                                                    <SolidColorBrush Color="{StaticResource PawSystemGreenColor}" Opacity="0.27" />
+                                                </Border.BorderBrush>
                                                 <Border.Visibility>
                                                     <MultiBinding Converter="{StaticResource EqualityMultiConverter}"
                                                                   ConverterParameter="TrueToVisible">
@@ -216,13 +220,13 @@
                                                 </Border.Visibility>
                                                 <StackPanel Orientation="Horizontal">
                                                     <Ellipse Width="6" Height="6"
-                                                             Fill="#22C55E"
+                                                             Fill="{DynamicResource PawSystemGreen}"
                                                              Margin="0,0,5,0"
                                                              VerticalAlignment="Center" />
                                                     <TextBlock Text="채팅 중"
                                                                FontSize="10"
                                                                FontFamily="{StaticResource PawFont}"
-                                                               Foreground="#22C55E" />
+                                                               Foreground="{DynamicResource PawSystemGreen}" />
                                                 </StackPanel>
                                             </Border>
                                             <Border Background="{DynamicResource PawGoldTint}"

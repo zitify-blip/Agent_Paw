@@ -272,11 +272,9 @@
                                             Padding="14,10"
                                             CornerRadius="2,14,14,14"
                                             BorderThickness="1"
+                                            Background="{DynamicResource PawCardBg}"
                                             Visibility="{Binding IsAssistant,
                                                 Converter={StaticResource BoolToVisConverter}}">
-                                        <Border.Background>
-                                            <SolidColorBrush Color="#2A2420" Opacity="0.85" />
-                                        </Border.Background>
                                         <Border.BorderBrush>
                                             <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.15" />
                                         </Border.BorderBrush>

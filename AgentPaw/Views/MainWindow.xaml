@@ -186,7 +186,7 @@
                                        Margin="0,2,0,8" />
                             <Border CornerRadius="6" BorderThickness="1"
                                     BorderBrush="{DynamicResource PawGold}"
-                                    Background="#22C8A96E">
+                                    Background="{DynamicResource PawGoldTint}">
                                 <ui:Button x:Name="LogoutButton"
                                            Content="로그아웃"
                                            Icon="{ui:SymbolIcon SignOut24}"

@@ -107,10 +107,18 @@
                                                 <Setter Property="Background" Value="Transparent" />
                                                 <Style.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter Property="Background" Value="#14C8A96E" />
+                                                        <Setter Property="Background">
+                                                            <Setter.Value>
+                                                                <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.08" />
+                                                            </Setter.Value>
+                                                        </Setter>
                                                     </Trigger>
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter Property="Background" Value="#2AC8A96E" />
+                                                        <Setter Property="Background">
+                                                            <Setter.Value>
+                                                                <SolidColorBrush Color="{StaticResource PawGoldColor}" Opacity="0.16" />
+                                                            </Setter.Value>
+                                                        </Setter>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
