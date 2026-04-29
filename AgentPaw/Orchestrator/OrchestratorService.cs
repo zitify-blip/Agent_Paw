@@ -109,7 +109,8 @@ public class OrchestratorService
             var config = await _configLoader.GetPersonaConfigAsync(currentPersonaId, input.ProjectId);
             var isCurrentPm = pmPersona != null && config.PersonaId == pmPersona.PersonaId;
 
-            var addendum = BuildProtocolAddendum(personas, config.Name, workspaceRoot, isCurrentPm, pmPersona, askUserEnabled, maxDiscussionRounds, maxDiscussionParticipants);
+            var isDevRequest = DetectDevIntent(input.Message);
+            var addendum = BuildProtocolAddendum(personas, config.Name, workspaceRoot, isCurrentPm, pmPersona, askUserEnabled, maxDiscussionRounds, maxDiscussionParticipants, isDevRequest);
             var systemPrompt = string.IsNullOrWhiteSpace(addendum)
                 ? config.SystemPrompt
                 : config.SystemPrompt + "\n\n" + addendum;
@@ -1358,6 +1359,22 @@ public class OrchestratorService
         );
     }
 
+    private static bool DetectDevIntent(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        var patterns = new[]
+        {
+            "개발해줘", "개발해 줘", "만들어줘", "만들어 줘", "구현해줘", "구현해 줘",
+            "코딩해줘", "코딩해 줘", "작성해줘", "작성해 줘", "짜줘", "짜 줘",
+            "개발하자", "만들자", "구현하자", "코딩하자",
+            "앱 만들", "프로그램 만들", "기능 만들", "기능 추가", "기능 구현",
+            "개발 부탁", "만들어달라", "구현해달라", "코드 짜", "코드 작성",
+            "개발 시작", "구현 시작", "만들기 시작",
+            "build me", "make me", "implement", "create a", "code a", "write a"
+        };
+        return patterns.Any(p => message.Contains(p, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string BuildProtocolAddendum(
         List<Persona> personas,
         string currentPersonaName,
@@ -1366,7 +1383,8 @@ public class OrchestratorService
         Persona? pmPersona,
         bool askUserEnabled,
         int maxRounds = DefaultMaxDiscussionRounds,
-        int maxParticipants = DefaultMaxDiscussionParticipants)
+        int maxParticipants = DefaultMaxDiscussionParticipants,
+        bool isDevRequest = false)
     {
         var sb = new StringBuilder();
 
@@ -1398,6 +1416,41 @@ public class OrchestratorService
             sb.AppendLine();
             sb.AppendLine("단독으로 최종 답을 돌려주지 않는다. 반드시 위 블록 중 하나로 다음 행동 주체를 지정한다.");
             sb.AppendLine();
+            if (isDevRequest)
+            {
+                sb.AppendLine("[자율 개발 워크플로]");
+                sb.AppendLine("이번 요청은 실제 코드·파일을 만드는 개발 작업이다. 아래 5단계를 순서대로 실행한다.");
+                sb.AppendLine();
+                sb.AppendLine("1단계 — 요구사항 정의");
+                sb.AppendLine("  User 메시지에서 다음을 추출하여 명확히 정리한다:");
+                sb.AppendLine("  - 구현할 기능과 결과물 (실행 파일·라이브러리·스크립트 등)");
+                sb.AppendLine("  - 언어·프레임워크·폴더 구조 (명시 없으면 PM이 합리적 기본값을 선택)");
+                sb.AppendLine("  - 주요 기술 제약 또는 참고 사항");
+                sb.AppendLine();
+                sb.AppendLine("2단계 — 기술 검토 (필요 시)");
+                sb.AppendLine("  아키텍처·기술 스택·모듈 구조에 의견 교환이 필요하면 discussion 블록으로 토론을 개시한다.");
+                sb.AppendLine("  단순 요청이라면 이 단계를 생략하고 바로 3단계로 진행한다.");
+                sb.AppendLine();
+                sb.AppendLine("3단계 — 구현 위임");
+                sb.AppendLine("  handoff 블록으로 개발 담당 페르소나에게 위임한다. request에 반드시 포함:");
+                sb.AppendLine("  - 구현 기능 명세 (무엇을 어떻게 만들어야 하는지 구체적으로)");
+                sb.AppendLine("  - 사용할 언어·프레임워크·파일 경로");
+                sb.AppendLine("  - 완성 기준 (빌드 성공, 테스트 통과, 실행 가능 여부)");
+                sb.AppendLine("  개발 페르소나는 코드를 write_file로 완성하고 run_command로 빌드·실행까지 검증한 뒤 복귀한다.");
+                sb.AppendLine();
+                sb.AppendLine("4단계 — 검토 및 보완");
+                sb.AppendLine("  복귀 후 read_file로 핵심 파일을 확인하고 run_command로 빌드·실행을 직접 검증한다.");
+                sb.AppendLine("  오류가 있으면 개발 페르소나에게 다시 handoff하여 수정을 지시한다.");
+                sb.AppendLine("  검토를 통과하면 5단계로 진행한다.");
+                sb.AppendLine();
+                sb.AppendLine("5단계 — 완료 보고");
+                sb.AppendLine("  pm_report 블록으로 보고한다. body에 반드시 포함:");
+                sb.AppendLine("  - 생성된 파일 목록 (상대 경로 포함)");
+                sb.AppendLine("  - 실행 방법 (명령어 예시)");
+                sb.AppendLine("  - 주요 설계 결정 및 근거");
+                sb.AppendLine("  - 추가로 필요한 작업이 있으면 명시");
+                sb.AppendLine();
+            }
             sb.AppendLine("[재질의 게이팅]");
             if (askUserEnabled)
             {
@@ -1464,6 +1517,23 @@ public class OrchestratorService
             sb.AppendLine("  - pm_report / pm_intervention 블록은 PM 전용이므로 사용하지 않는다.");
             sb.AppendLine("  - User에게 직접 재질의하지 않는다. 정보가 부족하면 합리적 기본값으로 진행하거나, 꼭 필요하면 PM에게 handoff로 판단을 요청한다.");
             sb.AppendLine();
+            if (isDevRequest)
+            {
+                sb.AppendLine("[개발 구현 지침]");
+                sb.AppendLine("이번 작업은 실제로 동작하는 코드·파일을 생성하는 개발 요청이다. 아래 규칙을 반드시 따른다:");
+                sb.AppendLine();
+                sb.AppendLine("- write_file로 모든 필요한 파일을 완성된 형태로 작성한다. 스텁·TODO·플레이스홀더로 끝내지 않는다.");
+                sb.AppendLine("- 파일 작성 후 run_command로 빌드 또는 실행 검증을 수행한다.");
+                sb.AppendLine("  예: run_command({\"command\": \"dotnet build\"}) / run_command({\"command\": \"npm test\"})");
+                sb.AppendLine("- 오류가 발생하면 원인을 분석하고 edit_file로 수정한 뒤 다시 run_command로 검증한다.");
+                sb.AppendLine("  오류가 사라질 때까지 수정 → 검증 루프를 반복한다.");
+                sb.AppendLine("- PM에게 복귀할 때 응답 마지막에 반드시 포함한다:");
+                sb.AppendLine("  - 생성·수정한 파일 목록 (상대 경로)");
+                sb.AppendLine("  - 실행 방법 (명령어 1줄)");
+                sb.AppendLine("  - 빌드·테스트 결과 요약");
+                sb.AppendLine("- handoff 없이 작업을 완료하는 것을 원칙으로 한다. 선행 작업이 반드시 필요한 경우에만 handoff를 사용한다.");
+                sb.AppendLine();
+            }
             AppendWikiSaveProtocol(sb);
             sb.AppendLine("동료 페르소나 목록:");
             sb.AppendLine(string.Join("\n", others));
