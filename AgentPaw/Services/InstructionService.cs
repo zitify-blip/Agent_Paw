@@ -110,9 +110,12 @@ public class InstructionService
     public async Task DeleteFileAsync(string fileId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
-        // project_instruction 연결도 삭제
-        var links = await db.ProjectInstructions.Where(pi => pi.FileId == fileId).ToListAsync();
-        db.ProjectInstructions.RemoveRange(links);
+
+        var projectLinks = await db.ProjectInstructions.Where(pi => pi.FileId == fileId).ToListAsync();
+        db.ProjectInstructions.RemoveRange(projectLinks);
+
+        var personaLinks = await db.PersonaInstructions.Where(pi => pi.FileId == fileId).ToListAsync();
+        db.PersonaInstructions.RemoveRange(personaLinks);
 
         var file = await db.InstructionFiles.FindAsync(fileId);
         if (file != null)
