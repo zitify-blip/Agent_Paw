@@ -46,6 +46,9 @@ public partial class DevAgentViewModel : ObservableObject
 
     [ObservableProperty] private string _inputText = "";
     [ObservableProperty] private bool _isRunning;
+    [ObservableProperty] private bool _isDevRunning;
+    [ObservableProperty] private bool _isGitDeploying;
+    [ObservableProperty] private string _gitRemoteUrl = "";
 
     // 현재 연결된 AgentPaw 프로젝트 이름 (헤더 표시용)
     [ObservableProperty] private string _linkedProjectName = "";
@@ -59,6 +62,7 @@ public partial class DevAgentViewModel : ObservableObject
     private string _baseDevRoot = DevAgentService.LoadSavedRoot();
     private string _currentProjectId = "";
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _devRunCts;
     private bool _hasSession;
     private string _accumulated = "";
 
@@ -132,6 +136,12 @@ public partial class DevAgentViewModel : ObservableObject
         SelectedProject = project;
         _hasSession = false;
         Messages.Clear();
+        _ = LoadGitRemoteAsync(project);
+    }
+
+    private async Task LoadGitRemoteAsync(DevProjectRecord? project)
+    {
+        GitRemoteUrl = project == null ? "" : (await DevAgentService.GetGitRemoteAsync(project.Path) ?? "");
     }
 
     [RelayCommand]
@@ -282,4 +292,98 @@ public partial class DevAgentViewModel : ObservableObject
         _cts?.Cancel();
         _devAgent.Cancel();
     }
+
+    // ─────────────────────────────────────────────────────────
+    // 로컬 실행
+
+    [RelayCommand(CanExecute = nameof(CanRunDev))]
+    private async Task RunDevAsync()
+    {
+        if (SelectedProject == null) return;
+        _devRunCts = new CancellationTokenSource();
+        IsDevRunning = true;
+        RunDevCommand.NotifyCanExecuteChanged();
+
+        var msg = new DevAgentMessage { Role = "assistant", Content = "", IsStreaming = true };
+        Messages.Add(msg);
+
+        var progress = new Progress<string>(text =>
+            Application.Current.Dispatcher.Invoke(() => msg.Content += text));
+
+        try
+        {
+            await _devAgent.RunProjectAsync(SelectedProject.Path, progress, _devRunCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            msg.Content += "\n▶ 중지됨";
+        }
+        catch (Exception ex)
+        {
+            msg.Content += $"\n[오류] {ex.Message}";
+        }
+        finally
+        {
+            msg.IsStreaming = false;
+            IsDevRunning = false;
+            _devRunCts?.Dispose();
+            _devRunCts = null;
+            RunDevCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanRunDev() => SelectedProject != null && !IsDevRunning;
+
+    [RelayCommand]
+    private void StopDev()
+    {
+        _devRunCts?.Cancel();
+        _devAgent.StopRunningProject();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // GitHub 배포
+
+    [RelayCommand(CanExecute = nameof(CanDeployToGit))]
+    private async Task DeployToGitAsync()
+    {
+        if (SelectedProject == null) return;
+        IsGitDeploying = true;
+        DeployToGitCommand.NotifyCanExecuteChanged();
+
+        var msg = new DevAgentMessage { Role = "assistant", Content = "", IsStreaming = true };
+        Messages.Add(msg);
+
+        var remoteUrl = GitRemoteUrl.Trim();
+        var progress = new Progress<string>(text =>
+            Application.Current.Dispatcher.Invoke(() => msg.Content += text));
+
+        try
+        {
+            await _devAgent.GitPushAsync(
+                SelectedProject.Path,
+                string.IsNullOrEmpty(remoteUrl) ? null : remoteUrl,
+                progress,
+                CancellationToken.None);
+
+            // 배포 성공 후 remote URL 재확인하여 갱신
+            if (!string.IsNullOrEmpty(remoteUrl))
+            {
+                var loaded = await DevAgentService.GetGitRemoteAsync(SelectedProject.Path);
+                GitRemoteUrl = loaded ?? remoteUrl;
+            }
+        }
+        catch (Exception ex)
+        {
+            msg.Content += $"\n[오류] {ex.Message}";
+        }
+        finally
+        {
+            msg.IsStreaming = false;
+            IsGitDeploying = false;
+            DeployToGitCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanDeployToGit() => SelectedProject != null && !IsGitDeploying;
 }

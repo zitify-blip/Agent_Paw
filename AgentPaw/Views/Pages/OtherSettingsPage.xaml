@@ -60,6 +60,59 @@
                 </StackPanel>
             </Border>
 
+            <!-- Version History -->
+            <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <TextBlock Text="버전 이력" FontSize="16" FontWeight="SemiBold"
+                                   FontFamily="{StaticResource PawFont}"
+                                   Foreground="{DynamicResource PawTextPrimary}" />
+                        <ui:Button DockPanel.Dock="Right" Content="목록 불러오기"
+                                   Appearance="Secondary" FontFamily="{StaticResource PawFont}"
+                                   HorizontalAlignment="Right" Padding="10,4"
+                                   Click="LoadVersionHistory_Click"
+                                   IsEnabled="{Binding IsLoadingVersionHistory,
+                                       Converter={StaticResource InverseBoolConverter}}" />
+                    </DockPanel>
+                    <TextBlock Text="특정 버전의 인스톨러를 선택하여 다운로드한다."
+                               FontSize="11" FontFamily="{StaticResource PawFont}"
+                               Foreground="{DynamicResource PawTextSecondary}"
+                               Margin="0,0,0,10" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding AvailableVersions}"
+                                  SelectedItem="{Binding SelectedRelease}"
+                                  FontFamily="{StaticResource PawFont}"
+                                  FontSize="13"
+                                  Margin="0,0,8,0"
+                                  IsEnabled="{Binding IsDownloadingSpecificVersion,
+                                      Converter={StaticResource InverseBoolConverter}}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontFamily="{StaticResource PawFont}">
+                                        <Run Text="v" /><Run Text="{Binding Version}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ui:Button Grid.Column="1" Content="다운로드 및 설치"
+                                   Appearance="Primary" FontFamily="{StaticResource PawFont}"
+                                   Padding="12,6"
+                                   Click="DownloadSpecificVersion_Click"
+                                   IsEnabled="{Binding IsDownloadingSpecificVersion,
+                                       Converter={StaticResource InverseBoolConverter}}" />
+                    </Grid>
+                    <ProgressBar Height="6" Margin="0,8,0,0"
+                                 Value="{Binding SpecificDownloadProgress}" Maximum="100"
+                                 Visibility="{Binding IsDownloadingSpecificVersion,
+                                     Converter={StaticResource BoolToVisConverter}}" />
+                </StackPanel>
+            </Border>
+
             <!-- App Info -->
             <Border Style="{StaticResource PawCardStyle}" Margin="0,0,0,16">
                 <StackPanel>

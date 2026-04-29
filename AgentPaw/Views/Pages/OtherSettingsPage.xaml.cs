@@ -46,6 +46,22 @@ public partial class OtherSettingsPage : UserControl
         else SuccessText.Visibility = Visibility.Collapsed;
     }
 
+    // === Version History ===
+
+    private async void LoadVersionHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.LoadVersionHistoryCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
+    private async void DownloadSpecificVersion_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        await _vm.DownloadSpecificVersionCommand.ExecuteAsync(null);
+        UpdateUI();
+    }
+
     // === Auto Update ===
 
     private async void CheckForUpdate_Click(object sender, RoutedEventArgs e)

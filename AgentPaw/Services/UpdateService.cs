@@ -221,4 +221,66 @@ public class UpdateService
             return vLatest > vCurrent;
         return false;
     }
+
+    /// <summary>
+    /// 모든 릴리즈 목록을 반환한다 (최신순 최대 20개).
+    /// </summary>
+    public async Task<List<ReleaseVersionItem>> GetAllReleasesAsync()
+    {
+        try
+        {
+            var url = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases?per_page=20";
+            var json = await Http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var result = new List<ReleaseVersionItem>();
+
+            foreach (var rel in doc.RootElement.EnumerateArray())
+            {
+                var tag = rel.GetProperty("tag_name").GetString() ?? "";
+                var version = tag.TrimStart('v', 'V');
+                var body = rel.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
+
+                string downloadUrl = "", fileName = "";
+                string? sha256Url = null;
+                var sha256Map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                if (rel.TryGetProperty("assets", out var assets))
+                {
+                    foreach (var asset in assets.EnumerateArray())
+                    {
+                        var name = asset.GetProperty("name").GetString() ?? "";
+                        var assetUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                        var lower = name.ToLowerInvariant();
+                        if (lower.EndsWith(".sha256"))
+                            sha256Map[name[..^".sha256".Length]] = assetUrl;
+                        else if (lower.EndsWith(".exe"))
+                        { downloadUrl = assetUrl; fileName = name; }
+                    }
+                    if (!string.IsNullOrEmpty(fileName))
+                        sha256Map.TryGetValue(fileName, out sha256Url);
+                }
+
+                if (!string.IsNullOrEmpty(downloadUrl))
+                    result.Add(new ReleaseVersionItem(
+                        version,
+                        downloadUrl,
+                        Path.GetFileName(fileName),
+                        sha256Url,
+                        body.Length > 200 ? body[..200] + "…" : body));
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "릴리즈 목록 로드 실패");
+            return [];
+        }
+    }
 }
+
+public record ReleaseVersionItem(
+    string Version,
+    string DownloadUrl,
+    string FileName,
+    string? Sha256Url,
+    string ReleaseNotes);

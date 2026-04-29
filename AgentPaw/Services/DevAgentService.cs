@@ -132,6 +132,206 @@ public class DevAgentService
         try { _activeProcess?.Kill(true); } catch { }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // 로컬 실행
+
+    private volatile Process? _devProcess;
+    public bool IsDevProcessRunning => _devProcess is { HasExited: false };
+
+    /// <summary>
+    /// 프로젝트 폴더에서 실행할 명령을 자동 감지한다.
+    /// </summary>
+    public static string? DetectRunCommand(string projectPath)
+    {
+        var pkg = Path.Combine(projectPath, "package.json");
+        if (File.Exists(pkg))
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(File.ReadAllText(pkg));
+                if (d.RootElement.TryGetProperty("scripts", out var scripts))
+                {
+                    if (scripts.TryGetProperty("dev", out _)) return "npm run dev";
+                    if (scripts.TryGetProperty("start", out _)) return "npm start";
+                }
+            }
+            catch { }
+            return "npm start";
+        }
+        if (Directory.GetFiles(projectPath, "*.csproj", SearchOption.TopDirectoryOnly).Length > 0)
+            return "dotnet run";
+        if (File.Exists(Path.Combine(projectPath, "manage.py"))) return "python manage.py runserver";
+        if (File.Exists(Path.Combine(projectPath, "main.py")))   return "python main.py";
+        if (File.Exists(Path.Combine(projectPath, "app.py")))    return "python app.py";
+        if (File.Exists(Path.Combine(projectPath, "go.mod")))    return "go run .";
+        if (File.Exists(Path.Combine(projectPath, "Cargo.toml"))) return "cargo run";
+        if (File.Exists(Path.Combine(projectPath, "Makefile")))  return "make";
+        return null;
+    }
+
+    public async Task RunProjectAsync(string workDir, IProgress<string> output, CancellationToken ct)
+    {
+        var cmd = DetectRunCommand(workDir);
+        if (cmd == null)
+        {
+            output.Report("[오류] 실행 가능한 프로젝트를 감지하지 못했습니다.\n지원: package.json · *.csproj · main.py · go.mod · Cargo.toml");
+            return;
+        }
+
+        var parts = cmd.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var psi = new ProcessStartInfo(parts[0], parts.Length > 1 ? parts[1] : "")
+        {
+            WorkingDirectory = workDir,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+
+        var proc = new Process { StartInfo = psi };
+        _devProcess = proc;
+        output.Report($"▶ `{cmd}`\n\n");
+
+        try
+        {
+            proc.Start();
+            ct.Register(() => { try { proc.Kill(true); } catch { } });
+
+            var outTask = Task.Run(async () =>
+            {
+                string? line;
+                while ((line = await proc.StandardOutput.ReadLineAsync(CancellationToken.None)) != null)
+                    output.Report(line + "\n");
+            }, CancellationToken.None);
+
+            var errTask = Task.Run(async () =>
+            {
+                string? line;
+                while ((line = await proc.StandardError.ReadLineAsync(CancellationToken.None)) != null)
+                    output.Report("[err] " + line + "\n");
+            }, CancellationToken.None);
+
+            await Task.WhenAll(outTask, errTask);
+            await proc.WaitForExitAsync(CancellationToken.None);
+            output.Report($"\n▶ 종료 (exit {proc.ExitCode})");
+        }
+        finally
+        {
+            _devProcess = null;
+            try { if (!proc.HasExited) proc.Kill(true); } catch { }
+            proc.Dispose();
+        }
+    }
+
+    public void StopRunningProject()
+    {
+        try { _devProcess?.Kill(true); } catch { }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // GitHub 배포
+
+    public static async Task<string?> GetGitRemoteAsync(string workDir)
+    {
+        if (!Directory.Exists(Path.Combine(workDir, ".git"))) return null;
+        try
+        {
+            var psi = new ProcessStartInfo("git", "remote get-url origin")
+            {
+                WorkingDirectory = workDir,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            using var proc = Process.Start(psi)!;
+            var result = await proc.StandardOutput.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            return proc.ExitCode == 0 ? result.Trim() : null;
+        }
+        catch { return null; }
+    }
+
+    public async Task GitPushAsync(string workDir, string? remoteUrl, IProgress<string> output, CancellationToken ct)
+    {
+        async Task<(int code, string stdout, string stderr)> Git(string args)
+        {
+            var psi = new ProcessStartInfo("git", args)
+            {
+                WorkingDirectory = workDir,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            using var proc = Process.Start(psi)!;
+            var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
+            var stderr = await proc.StandardError.ReadToEndAsync(ct);
+            await proc.WaitForExitAsync(ct);
+            return (proc.ExitCode, stdout.Trim(), stderr.Trim());
+        }
+
+        // 1. git init
+        if (!Directory.Exists(Path.Combine(workDir, ".git")))
+        {
+            output.Report("git init...\n");
+            var (code, _, err) = await Git("init");
+            if (code != 0) { output.Report($"[오류] git init: {err}"); return; }
+            output.Report("완료\n\n");
+        }
+
+        // 2. remote 설정
+        if (!string.IsNullOrWhiteSpace(remoteUrl))
+        {
+            var (chk, _, _) = await Git("remote get-url origin");
+            var setCmd = chk == 0
+                ? $"remote set-url origin \"{remoteUrl}\""
+                : $"remote add origin \"{remoteUrl}\"";
+            var (setCode, _, setErr) = await Git(setCmd);
+            if (setCode != 0) { output.Report($"[오류] remote: {setErr}"); return; }
+            output.Report($"remote: {remoteUrl}\n\n");
+        }
+
+        // 3. remote 확인
+        var (remChk, remOut, _) = await Git("remote get-url origin");
+        if (remChk != 0 || string.IsNullOrEmpty(remOut))
+        {
+            output.Report("[오류] GitHub remote가 설정되어 있지 않습니다.\nRemote URL을 입력 후 다시 시도하세요.");
+            return;
+        }
+        output.Report($"remote: {remOut}\n\n");
+
+        // 4. git add .
+        output.Report("git add .\n");
+        var (addCode, _, addErr) = await Git("add .");
+        if (addCode != 0) { output.Report($"[오류] add: {addErr}"); return; }
+
+        // 5. git commit
+        var stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        output.Report("git commit...\n");
+        var (cmtCode, cmtOut, cmtErr) = await Git($"commit -m \"update: {stamp}\"");
+        if (cmtCode != 0)
+        {
+            var combined = (cmtOut + cmtErr).ToLowerInvariant();
+            if (combined.Contains("nothing to commit") || combined.Contains("nothing added"))
+                output.Report("변경사항 없음 — 이미 최신 상태입니다.\n\n");
+            else
+            { output.Report($"[오류] commit: {cmtErr}"); return; }
+        }
+        else output.Report($"{cmtOut}\n\n");
+
+        // 6. git push
+        output.Report("git push...\n");
+        var (pushCode, pushOut, pushErr) = await Git("push -u origin HEAD");
+        if (pushCode != 0) { output.Report($"[오류] push: {pushErr}"); return; }
+        output.Report($"GitHub 배포 완료!\n{pushOut}");
+    }
+
     private static DevStreamEvent? ParseEvent(string line)
     {
         if (string.IsNullOrWhiteSpace(line)) return null;

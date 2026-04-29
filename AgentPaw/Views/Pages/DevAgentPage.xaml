@@ -131,6 +131,46 @@
                         BorderThickness="0,1,0,0"
                         BorderBrush="{DynamicResource PawBorder}">
                     <StackPanel>
+                        <!-- 실행 / 중지 / GitHub -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <ui:Button Content="실행"
+                                       Icon="{ui:SymbolIcon Play24}"
+                                       Appearance="Secondary"
+                                       FontFamily="{StaticResource PawFont}"
+                                       FontSize="11" Padding="6,4" Margin="0,0,4,0"
+                                       ToolTip="로컬에서 실행"
+                                       Command="{Binding RunDevCommand}" />
+                            <ui:Button Content="중지"
+                                       Icon="{ui:SymbolIcon Stop24}"
+                                       Appearance="Secondary"
+                                       FontFamily="{StaticResource PawFont}"
+                                       FontSize="11" Padding="6,4" Margin="0,0,4,0"
+                                       ToolTip="실행 중지"
+                                       Command="{Binding StopDevCommand}"
+                                       Visibility="{Binding IsDevRunning,
+                                           Converter={StaticResource BoolToVisConverter}}" />
+                            <ui:Button Content="GitHub"
+                                       Icon="{ui:SymbolIcon ArrowUpload24}"
+                                       Appearance="Secondary"
+                                       FontFamily="{StaticResource PawFont}"
+                                       FontSize="11" Padding="6,4"
+                                       ToolTip="GitHub에 배포 (git add → commit → push)"
+                                       Command="{Binding DeployToGitCommand}" />
+                        </StackPanel>
+                        <!-- GitHub Remote URL (프로젝트 선택 시 노출) -->
+                        <StackPanel Margin="0,0,0,6"
+                                    Visibility="{Binding SelectedProject,
+                                        Converter={StaticResource NullToCollapsedConverter}}">
+                            <TextBlock Text="GitHub Remote"
+                                       FontSize="9"
+                                       FontFamily="{StaticResource PawFont}"
+                                       Foreground="{DynamicResource PawTextSecondary}"
+                                       Margin="0,0,0,2" />
+                            <TextBox Text="{Binding GitRemoteUrl, UpdateSourceTrigger=PropertyChanged}"
+                                     FontFamily="{StaticResource PawFont}"
+                                     FontSize="10"
+                                     Padding="6,4" />
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <ui:Button Content="폴더"
                                        Icon="{ui:SymbolIcon Folder24}"

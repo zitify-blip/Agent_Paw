@@ -72,6 +72,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _isDownloadingUpdate;
     private UpdateInfo? _pendingUpdate;
 
+    // Version History
+    [ObservableProperty] private bool _isLoadingVersionHistory;
+    [ObservableProperty] private ReleaseVersionItem? _selectedRelease;
+    [ObservableProperty] private bool _isDownloadingSpecificVersion;
+    [ObservableProperty] private int _specificDownloadProgress;
+    public ObservableCollection<ReleaseVersionItem> AvailableVersions { get; } = [];
+
     // Space Links (Google)
     public ObservableCollection<SpaceLinkItem> SpaceLinks { get; } = [];
 
@@ -107,6 +114,48 @@ public partial class SettingsViewModel : ObservableObject
         _telegramChatService = telegramChatService;
         _telegramPollingService = telegramPollingService;
         _updateService = updateService;
+    }
+
+    [RelayCommand]
+    public async Task LoadVersionHistoryAsync()
+    {
+        IsLoadingVersionHistory = true;
+        ErrorMessage = null;
+        try
+        {
+            var versions = await _updateService.GetAllReleasesAsync();
+            AvailableVersions.Clear();
+            foreach (var v in versions)
+                AvailableVersions.Add(v);
+            if (AvailableVersions.Count > 0)
+                SelectedRelease = AvailableVersions[0];
+        }
+        catch (Exception ex) { ErrorMessage = $"버전 목록 로드 실패: {ex.Message}"; }
+        finally { IsLoadingVersionHistory = false; }
+    }
+
+    [RelayCommand]
+    public async Task DownloadSpecificVersionAsync()
+    {
+        if (SelectedRelease == null) return;
+        IsDownloadingSpecificVersion = true;
+        SpecificDownloadProgress = 0;
+        ErrorMessage = null;
+        try
+        {
+            var info = new UpdateInfo
+            {
+                Version = SelectedRelease.Version,
+                DownloadUrl = SelectedRelease.DownloadUrl,
+                FileName = SelectedRelease.FileName,
+                Sha256Url = SelectedRelease.Sha256Url,
+                ReleaseNotes = SelectedRelease.ReleaseNotes
+            };
+            var ok = await _updateService.DownloadAndInstallAsync(info, pct => SpecificDownloadProgress = pct);
+            if (!ok) ErrorMessage = "다운로드·검증에 실패했습니다.";
+        }
+        catch (Exception ex) { ErrorMessage = $"다운로드 실패: {ex.Message}"; }
+        finally { IsDownloadingSpecificVersion = false; }
     }
 
     [RelayCommand]
