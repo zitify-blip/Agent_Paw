@@ -160,7 +160,7 @@
                                        Margin="0,1" Padding="12,8"
                                        Click="NavApiIntegration_Click" />
                             <ui:Button x:Name="NavOtherSettingsBtn"
-                                       Content="기타 설정"
+                                       Content="설정"
                                        Icon="{ui:SymbolIcon Options24}"
                                        Appearance="Transparent"
                                        Foreground="{DynamicResource PawSidebarText}"
