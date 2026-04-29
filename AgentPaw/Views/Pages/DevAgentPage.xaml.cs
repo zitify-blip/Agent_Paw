@@ -11,6 +11,7 @@ namespace AgentPaw.Views.Pages;
 public partial class DevAgentPage : UserControl
 {
     private DevAgentViewModel? _vm;
+    private readonly List<DevAgentMessage> _subscribedMessages = [];
 
     public DevAgentPage()
     {
@@ -23,7 +24,16 @@ public partial class DevAgentPage : UserControl
         DataContext = vm;
 
         vm.Messages.CollectionChanged += OnMessagesChanged;
-        Unloaded += (_, _) => vm.Messages.CollectionChanged -= OnMessagesChanged;
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        _vm.Messages.CollectionChanged -= OnMessagesChanged;
+        foreach (var msg in _subscribedMessages)
+            msg.PropertyChanged -= OnMessagePropertyChanged;
+        _subscribedMessages.Clear();
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -33,7 +43,10 @@ public partial class DevAgentPage : UserControl
             foreach (var item in e.NewItems)
             {
                 if (item is DevAgentMessage msg)
+                {
                     msg.PropertyChanged += OnMessagePropertyChanged;
+                    _subscribedMessages.Add(msg);
+                }
             }
             ScrollToBottom();
         }

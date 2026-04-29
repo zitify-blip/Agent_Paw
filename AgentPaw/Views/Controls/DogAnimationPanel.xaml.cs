@@ -303,6 +303,8 @@ public partial class DogAnimationPanel : UserControl
 
         // ── 이미지 로드 (AvatarToImageConverter와 동일한 로직, 별도 캐시) ──
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource?> _imgCache = new();
+        private static readonly System.Collections.Concurrent.ConcurrentQueue<string> _imgCacheOrder = new();
+        private const int ImgCacheCapacity = 150;
 
         private static ImageSource? LoadAvatar(string? path)
         {
@@ -338,6 +340,9 @@ public partial class DogAnimationPanel : UserControl
             catch { }
 
             _imgCache[path] = result;
+            _imgCacheOrder.Enqueue(path);
+            while (_imgCache.Count > ImgCacheCapacity && _imgCacheOrder.TryDequeue(out var oldest))
+                _imgCache.TryRemove(oldest, out _);
             return result;
         }
 

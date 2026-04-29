@@ -33,7 +33,8 @@ public class ClaudeCliService
                 CreateNoWindow = true
             };
             process.Start();
-            await process.WaitForExitAsync(new CancellationTokenSource(5000).Token);
+            using var cts = new CancellationTokenSource(5000);
+            await process.WaitForExitAsync(cts.Token);
             return process.ExitCode == 0;
         }
         catch
