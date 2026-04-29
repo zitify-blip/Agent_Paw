@@ -1,6 +1,8 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using AgentPaw.Models;
@@ -9,7 +11,8 @@ namespace AgentPaw.Views.Controls;
 
 public partial class DogAnimationPanel : UserControl
 {
-    private const double GroundY = 82;
+    private const double GroundY = 92;   // 지면 Y (120px 패널 기준)
+    private const double ImgSize = 66;   // 아바타 이미지 크기
 
     private readonly List<DogSprite> _dogs = [];
     private readonly DispatcherTimer _timer;
@@ -29,10 +32,11 @@ public partial class DogAnimationPanel : UserControl
         DogsCanvas.Children.Clear();
         _dogs.Clear();
 
+        // 지면선
         var ground = new Line
         {
             X1 = 0, Y1 = GroundY, X2 = 3000, Y2 = GroundY,
-            Stroke = new SolidColorBrush(Color.FromArgb(55, 200, 169, 110)),
+            Stroke = new SolidColorBrush(Color.FromArgb(50, 200, 169, 110)),
             StrokeThickness = 1,
             IsHitTestVisible = false
         };
@@ -42,13 +46,13 @@ public partial class DogAnimationPanel : UserControl
         if (list.Count == 0) return;
 
         double panelW = ActualWidth > 80 ? ActualWidth : 1200;
-        double spacing = Math.Max(80, panelW / (list.Count + 1));
+        double spacing = Math.Max(90, panelW / (list.Count + 1));
         for (int i = 0; i < list.Count; i++)
         {
             var dog = new DogSprite(list[i], _rng);
             dog.X = spacing * (i + 1);
-            dog.VelX = (i % 2 == 0 ? 1 : -1) * (35 + i * 8);
-            dog.Build(DogsCanvas, GroundY);
+            dog.VelX = (i % 2 == 0 ? 1 : -1) * (38 + i * 9);
+            dog.Build(DogsCanvas, GroundY, ImgSize);
             _dogs.Add(dog);
         }
     }
@@ -63,7 +67,7 @@ public partial class DogAnimationPanel : UserControl
         foreach (var d in _dogs)
         {
             d.IsSpeaking = personaId != null && d.PersonaId == personaId;
-            d.SpeechText = d.IsSpeaking ? Truncate(preview, 40) : null;
+            d.SpeechText = d.IsSpeaking ? Truncate(preview, 42) : null;
         }
     }
 
@@ -91,131 +95,129 @@ public partial class DogAnimationPanel : UserControl
         public bool IsSpeaking;
         public string? SpeechText;
 
+        private readonly Persona _persona;
         private readonly Color _color;
-        private readonly Color _darkColor;
-        private readonly string _label;
         private readonly Random _rng;
         private double _groundY;
+        private double _imgSize;
 
-        private Canvas _dogCanvas = null!;
+        // 메인 요소 (방향 전환을 위해 ScaleTransform 적용)
+        private UIElement _dogEl = null!;
         private ScaleTransform _scaleX = null!;
-        private Rectangle _legFL = null!, _legFR = null!, _legBL = null!, _legBR = null!;
-        private Ellipse _tail = null!;
-        private RotateTransform _tailRot = null!;
+        private TranslateTransform _bounceT = null!;
+
+        // 말풍선 / 이름표 (parent Canvas에 직접 → flip 없음)
         private Border _bubble = null!;
         private TextBlock _bubbleText = null!;
         private TextBlock _nameLabel = null!;
 
-        private double _legPhase;
-        private double _tailPhase;
-        private double _bounceOffset;
+        // 애니메이션 상태
+        private double _phase;        // 달리기/흔들기 공통 위상
+        private double _bounceOffset; // 현재 바운스 오프셋 (px, 음수=위)
         private bool _facingRight = true;
         private DateTime _lastTime;
         private double _idleTimer;
         private double _idleVelX;
 
-        private const double LegBase = 34;
-
         public DogSprite(Persona persona, Random rng)
         {
             PersonaId = persona.PersonaId;
-            _label = persona.Label;
+            _persona = persona;
             _color = MapColor(persona.Color);
-            _darkColor = Darken(_color, 0.35);
             _rng = rng;
         }
 
-        public void Build(Canvas parent, double groundY)
+        public void Build(Canvas parent, double groundY, double imgSize)
         {
             _groundY = groundY;
+            _imgSize = imgSize;
             _lastTime = DateTime.UtcNow;
             _facingRight = VelX >= 0;
 
-            var fill = B(_color);
-            var dark = B(_darkColor);
+            // ── 트랜스폼 그룹 (스케일 X 반전 + 바운스 Y) ──────────────
+            _scaleX = new ScaleTransform(1, 1, imgSize / 2, imgSize / 2);
+            _bounceT = new TranslateTransform();
+            var tg = new TransformGroup();
+            tg.Children.Add(_scaleX);
+            tg.Children.Add(_bounceT);
 
-            _dogCanvas = new Canvas { Width = 52, Height = 52, IsHitTestVisible = false };
-            _scaleX = new ScaleTransform(1, 1, 26, 26);
-            _dogCanvas.RenderTransform = _scaleX;
+            // ── 강아지 요소 ────────────────────────────────────────────
+            var src = LoadAvatar(_persona.Avatar);
+            if (src != null)
+            {
+                _dogEl = new Image
+                {
+                    Source = src,
+                    Width = imgSize, Height = imgSize,
+                    Stretch = Stretch.Uniform,
+                    RenderTransform = tg,
+                    RenderTransformOrigin = new Point(0, 0),
+                    IsHitTestVisible = false,
+                    SnapsToDevicePixels = true
+                };
+            }
+            else
+            {
+                // 아바타 없을 때: 페르소나 컬러 원 + 발바닥 이모지
+                var grid = new Grid
+                {
+                    Width = imgSize, Height = imgSize,
+                    RenderTransform = tg,
+                    IsHitTestVisible = false
+                };
+                grid.Children.Add(new Ellipse
+                {
+                    Width = imgSize, Height = imgSize,
+                    Fill = new SolidColorBrush(Color.FromArgb(140, _color.R, _color.G, _color.B))
+                });
+                grid.Children.Add(new TextBlock
+                {
+                    Text = "🐾",
+                    FontSize = imgSize * 0.44,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                _dogEl = grid;
+            }
+            parent.Children.Add(_dogEl);
 
-            // Tail
-            _tail = new Ellipse { Width = 14, Height = 8, Fill = dark };
-            _tailRot = new RotateTransform(0, 1, 4);
-            _tail.RenderTransform = _tailRot;
-            At(_tail, 2, 25);
-
-            // Back legs
-            _legBL = Leg(dark); At(_legBL, 12, LegBase);
-            _legBR = Leg(dark); At(_legBR, 18, LegBase);
-
-            // Body
-            var body = new Ellipse { Width = 28, Height = 15, Fill = fill };
-            At(body, 11, 26);
-
-            // Front legs
-            _legFL = Leg(dark); At(_legFL, 27, LegBase);
-            _legFR = Leg(dark); At(_legFR, 33, LegBase);
-
-            // Head
-            var head = new Ellipse { Width = 16, Height = 15, Fill = fill };
-            At(head, 32, 20);
-
-            // Ears
-            var earL = new Ellipse { Width = 8, Height = 10, Fill = dark };
-            earL.RenderTransform = new RotateTransform(-20, 4, 5);
-            At(earL, 32, 12);
-
-            var earR = new Ellipse { Width = 8, Height = 10, Fill = dark };
-            earR.RenderTransform = new RotateTransform(20, 4, 5);
-            At(earR, 38, 12);
-
-            // Eye + pupil
-            var eye = new Ellipse { Width = 4, Height = 4, Fill = Brushes.White };
-            At(eye, 37, 22);
-            var pupil = new Ellipse { Width = 2, Height = 2, Fill = Brushes.Black };
-            At(pupil, 38, 23);
-
-            // Nose
-            var nose = new Ellipse { Width = 5, Height = 4, Fill = B(Color.FromRgb(55, 38, 32)) };
-            At(nose, 44, 27);
-
-            foreach (var el in new UIElement[] { _tail, _legBL, _legBR, body, _legFL, _legFR, head, earL, earR, eye, pupil, nose })
-                _dogCanvas.Children.Add(el);
-
-            parent.Children.Add(_dogCanvas);
-
-            // Speech bubble (in parent canvas, not inside dog canvas — so it doesn't flip)
+            // ── 말풍선 (parent에 직접, flip 영향 없음) ─────────────────
             _bubbleText = new TextBlock
             {
                 FontSize = 10,
                 FontFamily = new FontFamily("Segoe UI"),
-                Foreground = B(Color.FromRgb(28, 28, 28)),
-                MaxWidth = 150,
+                Foreground = new SolidColorBrush(Color.FromRgb(28, 28, 28)),
+                MaxWidth = 160,
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
             _bubble = new Border
             {
-                Background = B(Color.FromArgb(242, 255, 255, 255)),
-                BorderBrush = B(Color.FromArgb(210, _color.R, _color.G, _color.B)),
+                Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(200, _color.R, _color.G, _color.B)),
                 BorderThickness = new Thickness(1.5),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(7, 3, 7, 3),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(8, 4, 8, 4),
                 Child = _bubbleText,
                 Visibility = Visibility.Collapsed,
-                IsHitTestVisible = false
+                IsHitTestVisible = false,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 6, ShadowDepth = 1, Opacity = 0.18,
+                    Color = Colors.Black, Direction = 270
+                }
             };
             parent.Children.Add(_bubble);
 
-            // Name label
+            // ── 이름표 ─────────────────────────────────────────────────
             _nameLabel = new TextBlock
             {
-                Text = _label,
-                Width = 64,
+                Text = _persona.Label,
+                Width = 72,
                 FontSize = 9,
                 FontFamily = new FontFamily("Segoe UI"),
                 TextAlignment = TextAlignment.Center,
-                Foreground = B(Color.FromArgb(170, 200, 169, 110)),
+                Foreground = new SolidColorBrush(Color.FromArgb(165, 200, 169, 110)),
                 IsHitTestVisible = false
             };
             parent.Children.Add(_nameLabel);
@@ -232,60 +234,56 @@ public partial class DogAnimationPanel : UserControl
             if (IsActive)
             {
                 X += VelX * dt;
-                if (X < 28 && VelX < 0) { VelX = -VelX; _facingRight = true; }
-                if (X > canvasWidth - 28 && VelX > 0) { VelX = -VelX; _facingRight = false; }
+                if (X < _imgSize / 2 + 4 && VelX < 0) { VelX = -VelX; _facingRight = true; }
+                if (X > canvasWidth - _imgSize / 2 - 4 && VelX > 0) { VelX = -VelX; _facingRight = false; }
 
-                _legPhase += dt * Math.Abs(VelX) * 0.13;
-                _bounceOffset = -Math.Abs(Math.Sin(_legPhase * 2)) * 2.5;
-                _tailPhase += dt * 10;
+                _phase += dt * Math.Abs(VelX) * 0.11;
+                // 달리기 바운스: 한 걸음마다 한 번 솟아오름
+                _bounceOffset = -Math.Abs(Math.Sin(_phase * 2)) * 3.0;
             }
             else
             {
+                // 아이들: 가끔 짧게 이동
                 _idleTimer -= dt;
                 if (_idleTimer <= 0)
                 {
                     _idleTimer = 2.5 + _rng.NextDouble() * 3.0;
-                    _idleVelX = _rng.NextDouble() > 0.6
-                        ? (_rng.NextDouble() > 0.5 ? 1 : -1) * 18.0
+                    _idleVelX = _rng.NextDouble() > 0.55
+                        ? (_rng.NextDouble() > 0.5 ? 1 : -1) * 20.0
                         : 0;
                     if (_idleVelX != 0) _facingRight = _idleVelX > 0;
                 }
-
                 if (_idleVelX != 0)
                 {
                     X += _idleVelX * dt;
-                    _legPhase += dt * 18 * 0.13;
-                    _bounceOffset = -Math.Abs(Math.Sin(_legPhase * 2)) * 1.5;
-                    if (X < 28 || X > canvasWidth - 28) _idleVelX = 0;
+                    _phase += dt * 20 * 0.11;
+                    _bounceOffset = -Math.Abs(Math.Sin(_phase * 2)) * 1.5;
+                    if (X < _imgSize / 2 + 4 || X > canvasWidth - _imgSize / 2 - 4) _idleVelX = 0;
                 }
                 else
                 {
-                    _legPhase = 0;
-                    _bounceOffset = 0;
+                    _phase += dt * 1.8;   // 미세한 제자리 흔들기용 위상 유지
+                    _bounceOffset = Math.Sin(_phase) * 0.8; // 숨쉬는 듯한 미세 움직임
                 }
-
-                _tailPhase += dt * 3.0;
             }
 
+            // ── 방향 전환 ──────────────────────────────────────────────
             _scaleX.ScaleX = _facingRight ? 1 : -1;
 
-            _tailRot.Angle = Math.Sin(_tailPhase) * (IsActive ? 28 : 16);
+            // ── 바운스 적용 ────────────────────────────────────────────
+            _bounceT.Y = _bounceOffset;
 
-            double legAnim = Math.Sin(_legPhase) * (IsActive ? 4.5 : (_idleVelX != 0 ? 2.5 : 0));
-            Canvas.SetTop(_legFL, LegBase + legAnim);
-            Canvas.SetTop(_legFR, LegBase - legAnim);
-            Canvas.SetTop(_legBL, LegBase - legAnim);
-            Canvas.SetTop(_legBR, LegBase + legAnim);
-
+            // ── 말풍선 업데이트 ────────────────────────────────────────
             if (IsSpeaking && !string.IsNullOrEmpty(SpeechText))
             {
                 _bubbleText.Text = SpeechText;
                 _bubble.Visibility = Visibility.Visible;
-                _bubble.Measure(new Size(200, 60));
+                _bubble.Measure(new Size(220, 60));
                 var bw = _bubble.DesiredSize.Width;
                 var bh = _bubble.DesiredSize.Height;
+                // 개 이미지 위에 말풍선 배치 (위로 약간 overflow 허용)
                 Canvas.SetLeft(_bubble, X - bw / 2);
-                Canvas.SetTop(_bubble, _groundY - 44 + _bounceOffset - bh - 6);
+                Canvas.SetTop(_bubble, _groundY - _imgSize + _bounceOffset - bh - 5);
             }
             else
             {
@@ -297,22 +295,51 @@ public partial class DogAnimationPanel : UserControl
 
         private void Reposition()
         {
-            Canvas.SetLeft(_dogCanvas, X - 26);
-            Canvas.SetTop(_dogCanvas, _groundY - 44 + _bounceOffset);
-            Canvas.SetLeft(_nameLabel, X - 32);
+            Canvas.SetLeft(_dogEl, X - _imgSize / 2);
+            Canvas.SetTop(_dogEl, _groundY - _imgSize);
+            Canvas.SetLeft(_nameLabel, X - 36);
             Canvas.SetTop(_nameLabel, _groundY + 2);
         }
 
-        private static void At(UIElement el, double l, double t)
+        // ── 이미지 로드 (AvatarToImageConverter와 동일한 로직, 별도 캐시) ──
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource?> _imgCache = new();
+
+        private static ImageSource? LoadAvatar(string? path)
         {
-            Canvas.SetLeft(el, l);
-            Canvas.SetTop(el, t);
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            if (_imgCache.TryGetValue(path, out var cached)) return cached;
+
+            ImageSource? result = null;
+            try
+            {
+                var bmp = new BitmapImage();
+                if (path.StartsWith("data:image/"))
+                {
+                    var b64 = path[(path.IndexOf(',', StringComparison.Ordinal) + 1)..];
+                    var bytes = Convert.FromBase64String(b64);
+                    using var ms = new MemoryStream(bytes);
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.StreamSource = ms;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    result = bmp;
+                }
+                else if (File.Exists(path))
+                {
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(path, UriKind.Absolute);
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    result = bmp;
+                }
+            }
+            catch { }
+
+            _imgCache[path] = result;
+            return result;
         }
-
-        private static Rectangle Leg(Brush fill) =>
-            new() { Width = 5, Height = 11, Fill = fill, RadiusX = 2, RadiusY = 2 };
-
-        private static SolidColorBrush B(Color c) => new(c);
 
         private static Color MapColor(string name) => name.ToLowerInvariant() switch
         {
@@ -328,13 +355,7 @@ public partial class DogAnimationPanel : UserControl
             "gold"   => Color.FromRgb(200, 169, 110),
             "cyan"   => Color.FromRgb(40,  195, 215),
             "brown"  => Color.FromRgb(140, 100,  80),
-            "lime"   => Color.FromRgb(140, 200,  50),
             _        => Color.FromRgb(160, 145, 130)
         };
-
-        private static Color Darken(Color c, double f) => Color.FromRgb(
-            (byte)(c.R * (1 - f)),
-            (byte)(c.G * (1 - f)),
-            (byte)(c.B * (1 - f)));
     }
 }
